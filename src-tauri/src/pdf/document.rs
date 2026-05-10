@@ -10,11 +10,15 @@ unsafe impl Send for PdfFile {}
 
 impl PdfFile {
     pub fn open(path: &str) -> Result<Self, String> {
+        println!("[PdfFile::open] attempting to bind to system pdfium library...");
         let bindings = Pdfium::bind_to_system_library()
             .map_err(|e| format!("Failed to load pdfium library: {}", e))?;
+        println!("[PdfFile::open] pdfium library bound successfully");
         let pdfium = Pdfium::new(bindings);
+        println!("[PdfFile::open] loading PDF from file: {}", path);
         let _doc = pdfium.load_pdf_from_file(path, None)
             .map_err(|e| format!("Failed to open PDF: {}", e))?;
+        println!("[PdfFile::open] PDF loaded successfully");
         Ok(Self {
             path: path.to_string(),
         })
@@ -47,33 +51,43 @@ impl PdfFile {
     }
 
     pub fn render_page(&self, page_index: u32, scale: f32) -> Result<RenderedPage, String> {
+        println!("[PdfFile::render_page] starting for page {} scale {}", page_index, scale);
         self.with_doc(|doc| {
+            println!("[PdfFile::render_page] doc loaded, getting page {}...", page_index);
             let page = doc.pages().get(page_index as u16)
                 .map_err(|e| format!("Page not found: {}", e))?;
+            println!("[PdfFile::render_page] got page, creating render config...");
 
             let render_config = PdfRenderConfig::new()
                 .set_target_width((page.width().value as f32 * scale) as i32)
                 .set_target_height((page.height().value as f32 * scale) as i32)
                 .render_form_data(true);
+            println!("[PdfFile::render_page] rendering with config...");
 
             let bitmap = page.render_with_config(&render_config)
                 .map_err(|e| format!("Render failed: {}", e))?;
+            println!("[PdfFile::render_page] bitmap rendered, extracting bytes...");
 
             let rgba_bytes = bitmap.as_raw_bytes();
             let width = bitmap.width() as u32;
             let height = bitmap.height() as u32;
+            println!("[PdfFile::render_page] bitmap size {}x{}", width, height);
 
             let mut png_data = Vec::new();
             {
-                let encoder = png::Encoder::new(&mut png_data, width, height);
+                let mut encoder = png::Encoder::new(&mut png_data, width, height);
+                encoder.set_color(png::ColorType::Rgba);
+                encoder.set_depth(png::BitDepth::Eight);
                 let mut writer = encoder.write_header()
                     .map_err(|e| format!("PNG header error: {}", e))?;
                 writer.write_image_data(&rgba_bytes)
                     .map_err(|e| format!("PNG data error: {}", e))?;
             }
+            println!("[PdfFile::render_page] png encoded, {} bytes", png_data.len());
 
             use base64::Engine;
             let image_base64 = base64::engine::general_purpose::STANDARD.encode(&png_data);
+            println!("[PdfFile::render_page] base64 encoded, {} chars", image_base64.len());
 
             Ok(RenderedPage {
                 width,

@@ -24,8 +24,10 @@ pub async fn open_pdf(
     state: State<'_, AppState>,
     path: String,
 ) -> Result<PdfInfo, CommandError> {
+    println!("[open_pdf] called with path: {}", path);
     let doc = PdfFile::open(&path)
         .map_err(|e| CommandError::Pdf(e.to_string()))?;
+    println!("[open_pdf] PdfFile opened successfully");
 
     let page_count = doc.page_count();
     let (page_width, page_height) = doc.page_dimensions(0)
@@ -65,11 +67,14 @@ pub async fn render_page(
     page_index: u32,
     scale: f32,
 ) -> Result<RenderResult, CommandError> {
+    println!("[render_page] called for page {} scale {}", page_index, scale);
     let pdf = state.pdf.lock().map_err(|e| CommandError::Pdf(e.to_string()))?;
     match &pdf.document {
         Some(doc) => {
+            println!("[render_page] rendering page...");
             let rendered = doc.render_page(page_index, scale)
                 .map_err(|e| CommandError::Pdf(e.to_string()))?;
+            println!("[render_page] done, size {}x{}", rendered.width, rendered.height);
             Ok(RenderResult {
                 width: rendered.width,
                 height: rendered.height,

@@ -39,12 +39,21 @@ export function Toolbar() {
   } = useStore()
 
   async function handleOpen() {
-    const path = await open({
-      multiple: false,
-      filters: [{ name: "PDF", extensions: ["pdf"] }],
-    })
-    if (path) {
-      await openPdf(path)
+    try {
+      const path = await open({
+        multiple: false,
+        filters: [{ name: "PDF", extensions: ["pdf"] }],
+      })
+      if (path) {
+        console.log("[Toolbar] opening PDF at path:", path)
+        await openPdf(path)
+        console.log("[Toolbar] openPdf completed")
+      } else {
+        console.log("[Toolbar] no path selected")
+      }
+    } catch (e) {
+      console.error("Failed to open PDF:", e)
+      alert("Failed to open PDF: " + e)
     }
   }
 

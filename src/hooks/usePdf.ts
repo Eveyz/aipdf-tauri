@@ -44,8 +44,11 @@ export function usePdf() {
 
   async function renderPage(pageIndex: number, scale?: number) {
     const s = scale ?? zoom
+    console.log(`[usePdf] invoking render_page for page ${pageIndex} scale ${s}`)
     const result = await invoke<RenderResult>("render_page", { pageIndex, scale: s })
+    console.log(`[usePdf] render_page returned, image_base64 length: ${result.image_base64.length}`)
     setRenderedPage(pageIndex, result.image_base64)
+    console.log(`[usePdf] setRenderedPage called`)
     return result
   }
 

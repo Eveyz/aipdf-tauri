@@ -34,8 +34,8 @@ export function ChatPanel() {
   }
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between border-b px-3 py-2">
+    <div className="flex h-full min-h-0 min-w-0 flex-col">
+      <div className="flex shrink-0 items-center justify-between border-b px-3 py-2">
         <h3 className="text-sm font-medium">AI Chat</h3>
         <Button
           variant="ghost"
@@ -49,7 +49,7 @@ export function ChatPanel() {
       </div>
 
       {/* Messages */}
-      <ScrollArea className="flex-1">
+      <ScrollArea className="min-h-0 flex-1">
         <div ref={scrollRef} className="flex flex-col gap-3 p-3">
           {!loadedModel && (
             <p className="text-center text-sm text-muted-foreground">
@@ -63,7 +63,7 @@ export function ChatPanel() {
               className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
             >
               <div
-                className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${
+                className={`max-w-[85%] overflow-hidden rounded-lg px-3 py-2 text-sm break-words ${
                   msg.role === "user"
                     ? "bg-primary text-primary-foreground"
                     : "bg-muted"
@@ -83,7 +83,7 @@ export function ChatPanel() {
           {/* Streaming token */}
           {streamingToken && (
             <div className="flex justify-start">
-              <div className="max-w-[85%] rounded-lg bg-muted px-3 py-2 text-sm">
+              <div className="max-w-[85%] overflow-hidden rounded-lg bg-muted px-3 py-2 text-sm break-words">
                 <div className="prose prose-sm dark:prose-invert max-w-none">
                   <ReactMarkdown>{streamingToken}</ReactMarkdown>
                 </div>
@@ -94,9 +94,10 @@ export function ChatPanel() {
       </ScrollArea>
 
       {/* Input */}
-      <div className="border-t p-3">
-        <div className="flex gap-2">
+      <div className="shrink-0 border-t p-3">
+        <div className="flex min-w-0 gap-2">
           <Input
+            className="min-w-0"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}

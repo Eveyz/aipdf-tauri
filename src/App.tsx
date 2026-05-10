@@ -9,36 +9,57 @@ import { WelcomeScreen } from "./components/WelcomeScreen"
 
 function App() {
   const { pdfInfo, sidebarOpen, chatOpen } = useStore()
+  const layoutKey = `${sidebarOpen ? "sidebar" : "no-sidebar"}-${chatOpen ? "chat" : "no-chat"}`
 
   return (
-    <div className="flex h-screen flex-col">
+    <div className="flex h-screen min-w-0 flex-col overflow-hidden">
       <Toolbar />
 
-      <div className="flex-1 overflow-hidden">
+      <div className="min-h-0 flex-1 overflow-hidden">
         {!pdfInfo ? (
           <WelcomeScreen />
         ) : (
-          <Group orientation="horizontal" className="h-full">
-            {/* Sidebar */}
+          <Group
+            key={layoutKey}
+            orientation="horizontal"
+            className="h-full min-w-0"
+          >
             {sidebarOpen && (
               <>
-                <Panel defaultSize={15} minSize={10} maxSize={25}>
+                <Panel
+                  id="sidebar"
+                  defaultSize="18%"
+                  minSize="220px"
+                  maxSize="360px"
+                  className="min-w-0 overflow-hidden"
+                >
                   <PageSidebar />
                 </Panel>
-                <Separator className="w-px bg-border hover:bg-primary/50 transition-colors" />
+
+                <Separator className="w-1 shrink-0 bg-border transition-colors hover:bg-primary cursor-col-resize" />
               </>
             )}
 
-            {/* PDF Viewer */}
-            <Panel defaultSize={chatOpen ? 55 : 85} minSize={30}>
+            <Panel
+              id="pdf"
+              defaultSize={sidebarOpen && chatOpen ? "58%" : "76%"}
+              minSize="320px"
+              className="min-w-0 overflow-hidden"
+            >
               <PdfViewer />
             </Panel>
 
-            {/* Chat */}
             {chatOpen && (
               <>
-                <Separator className="w-px bg-border hover:bg-primary/50 transition-colors" />
-                <Panel defaultSize={30} minSize={20} maxSize={45}>
+                <Separator className="w-1 shrink-0 bg-border transition-colors hover:bg-primary cursor-col-resize" />
+
+                <Panel
+                  id="chat"
+                  defaultSize="24%"
+                  minSize="280px"
+                  maxSize="480px"
+                  className="min-w-0 overflow-hidden"
+                >
                   <ChatPanel />
                 </Panel>
               </>
