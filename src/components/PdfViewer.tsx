@@ -2,19 +2,32 @@ import { useEffect } from "react"
 import { usePdf } from "../hooks/usePdf"
 import { useStore } from "../store"
 
+const CSS_PIXELS_PER_PDF_POINT = 96 / 72
+const MAX_RENDER_SCALE = 5
+
 export function PdfViewer() {
   const { renderPage } = usePdf()
   const { pdfInfo, currentPage, renderedPages, zoom } = useStore()
+  const displayWidth = pdfInfo
+    ? Math.round(pdfInfo.pageWidth * CSS_PIXELS_PER_PDF_POINT * zoom)
+    : 0
+  const renderScale =
+    typeof window === "undefined"
+      ? zoom * CSS_PIXELS_PER_PDF_POINT
+      : Math.min(
+          zoom * CSS_PIXELS_PER_PDF_POINT * window.devicePixelRatio,
+          MAX_RENDER_SCALE
+        )
 
   useEffect(() => {
     if (pdfInfo && renderedPages[currentPage] === undefined) {
       console.log(`[PdfViewer] triggering render for page ${currentPage}`)
-      renderPage(currentPage).catch((e) => {
+      renderPage(currentPage, renderScale).catch((e) => {
         console.error("[PdfViewer] renderPage failed:", e)
         alert("Failed to render page: " + e)
       })
     }
-  }, [pdfInfo, currentPage, zoom, renderPage, renderedPages])
+  }, [pdfInfo, currentPage, renderPage, renderedPages, renderScale])
 
   if (!pdfInfo) return null
 
@@ -28,6 +41,7 @@ export function PdfViewer() {
             src={`data:image/png;base64,${imageData}`}
             alt={`Page ${currentPage + 1}`}
             className="max-w-none shrink-0 shadow-lg"
+            style={{ width: displayWidth }}
             draggable={false}
           />
         </div>
