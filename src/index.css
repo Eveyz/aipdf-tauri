@@ -128,3 +128,17 @@
     overflow: hidden;
   }
 }
+
+.pdf-text-layer {
+  color: transparent;
+}
+
+.pdf-text-line {
+  -webkit-text-fill-color: transparent;
+}
+
+.pdf-text-line::selection {
+  background: rgb(147 197 253 / 0.45);
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}

@@ -18,6 +18,10 @@ export interface ModelInfo {
   modelType: string
   hasTokenizer: boolean
   path: string
+  source?: "local" | "cloud"
+  baseUrl?: string
+  apiKey?: string
+  modelName?: string
 }
 
 export interface ModelEntry {
@@ -38,6 +42,34 @@ export interface DownloadProgress {
   percentage: number
 }
 
+export interface CloudModelEntry {
+  id: string
+  name: string
+  vendor: string
+  baseUrl: string
+  apiKey: string
+  modelName: string
+}
+
+const CLOUD_MODELS_STORAGE_KEY = "aipdf-cloud-models"
+
+function readCloudModels(): CloudModelEntry[] {
+  if (typeof window === "undefined") return []
+
+  try {
+    const raw = window.localStorage.getItem(CLOUD_MODELS_STORAGE_KEY)
+    return raw ? JSON.parse(raw) : []
+  } catch {
+    return []
+  }
+}
+
+function writeCloudModels(models: CloudModelEntry[]) {
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(CLOUD_MODELS_STORAGE_KEY, JSON.stringify(models))
+  }
+}
+
 interface AppState {
   // PDF
   pdfInfo: PdfInfo | null
@@ -50,12 +82,14 @@ interface AppState {
   isGenerating: boolean
   chatMessages: ChatMessage[]
   streamingToken: string
+  selectedPdfText: string
 
   // UI
   sidebarOpen: boolean
   chatOpen: boolean
   modelManagerOpen: boolean
   downloadProgress: DownloadProgress | null
+  cloudModels: CloudModelEntry[]
 
   // Actions
   setPdfInfo: (info: PdfInfo | null) => void
@@ -68,10 +102,14 @@ interface AppState {
   clearChat: () => void
   setStreamingToken: (token: string) => void
   appendStreamingToken: (token: string) => void
+  setSelectedPdfText: (text: string) => void
   setSidebarOpen: (open: boolean) => void
   setChatOpen: (open: boolean) => void
   setModelManagerOpen: (open: boolean) => void
   setDownloadProgress: (progress: DownloadProgress | null) => void
+  addCloudModel: (model: CloudModelEntry) => void
+  updateCloudModel: (model: CloudModelEntry) => void
+  deleteCloudModel: (id: string) => void
 }
 
 export const useStore = create<AppState>((set) => ({
@@ -86,12 +124,14 @@ export const useStore = create<AppState>((set) => ({
   isGenerating: false,
   chatMessages: [],
   streamingToken: "",
+  selectedPdfText: "",
 
   // UI
   sidebarOpen: true,
   chatOpen: true,
   modelManagerOpen: false,
   downloadProgress: null,
+  cloudModels: readCloudModels(),
 
   // Actions
   setPdfInfo: (info) => set({ pdfInfo: info, currentPage: 0, renderedPages: {} }),
@@ -107,8 +147,30 @@ export const useStore = create<AppState>((set) => ({
   setStreamingToken: (token) => set({ streamingToken: token }),
   appendStreamingToken: (token) =>
     set((state) => ({ streamingToken: state.streamingToken + token })),
+  setSelectedPdfText: (text) => set({ selectedPdfText: text }),
   setSidebarOpen: (open) => set({ sidebarOpen: open }),
   setChatOpen: (open) => set({ chatOpen: open }),
   setModelManagerOpen: (open) => set({ modelManagerOpen: open }),
   setDownloadProgress: (progress) => set({ downloadProgress: progress }),
+  addCloudModel: (model) =>
+    set((state) => {
+      const cloudModels = [...state.cloudModels, model]
+      writeCloudModels(cloudModels)
+      return { cloudModels }
+    }),
+  updateCloudModel: (model) =>
+    set((state) => {
+      const cloudModels = state.cloudModels.map((m) => (m.id === model.id ? model : m))
+      writeCloudModels(cloudModels)
+      return { cloudModels }
+    }),
+  deleteCloudModel: (id) =>
+    set((state) => {
+      const cloudModels = state.cloudModels.filter((m) => m.id !== id)
+      writeCloudModels(cloudModels)
+      return {
+        cloudModels,
+        loadedModel: state.loadedModel?.id === `cloud:${id}` ? null : state.loadedModel,
+      }
+    }),
 }))

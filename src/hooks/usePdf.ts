@@ -14,7 +14,7 @@ interface RenderResult {
   image_base64: string
 }
 
-interface PageTextResult {
+export interface PageTextResult {
   full_text: string
   chars: Array<{
     char_index: number

@@ -1,13 +1,20 @@
 import { invoke } from "@tauri-apps/api/core"
 import { listen } from "@tauri-apps/api/event"
-import { useEffect, useRef } from "react"
-import { useStore, type ModelInfo, type ModelEntry } from "../store"
+import { useEffect } from "react"
+import { useStore, type ModelInfo, type ModelEntry, type ChatMessage } from "../store"
 
 interface TokenPayload {
   token: string
   token_id: number
   is_final: boolean
 }
+
+interface CloudTestResult {
+  ok: boolean
+  message: string
+}
+
+let listenersStarted = false
 
 export function useAi() {
   const {
@@ -17,48 +24,38 @@ export function useAi() {
     setIsGenerating,
     addChatMessage,
     setStreamingToken,
-    appendStreamingToken,
-    setDownloadProgress,
     chatMessages,
   } = useStore()
 
-  const unlistenRef = useRef<(() => void) | null>(null)
-  const unlistenDownloadRef = useRef<(() => void) | null>(null)
-
   useEffect(() => {
-    // Listen for AI tokens
+    if (listenersStarted) return
+    listenersStarted = true
+
     listen<TokenPayload>("ai-token", (event) => {
       const { token, is_final } = event.payload
+      const state = useStore.getState()
+
       if (is_final) {
-        const current = useStore.getState().streamingToken
-        if (current) {
-          addChatMessage({ role: "assistant", content: current })
+        const current = state.streamingToken
+        const content = current || token
+        if (content) {
+          state.addChatMessage({ role: "assistant", content })
         }
-        setStreamingToken("")
-        setIsGenerating(false)
+        state.setStreamingToken("")
+        state.setIsGenerating(false)
       } else {
-        appendStreamingToken(token)
+        state.appendStreamingToken(token)
       }
-    }).then((unlisten) => {
-      unlistenRef.current = unlisten
     })
 
-    // Listen for download progress
     listen("download-progress", (event) => {
-      setDownloadProgress(event.payload as any)
-    }).then((unlisten) => {
-      unlistenDownloadRef.current = unlisten
+      useStore.getState().setDownloadProgress(event.payload as any)
     })
-
-    return () => {
-      unlistenRef.current?.()
-      unlistenDownloadRef.current?.()
-    }
   }, [])
 
   async function loadModel(modelId: string) {
     const info = await invoke<ModelInfo>("load_model", { modelId })
-    setLoadedModel(info)
+    setLoadedModel({ ...info, source: "local" })
     return info
   }
 
@@ -67,14 +64,34 @@ export function useAi() {
     setLoadedModel(null)
   }
 
-  async function generate(prompt: string, maxTokens?: number, temperature?: number) {
+  async function generate(prompt: string, context?: string, maxTokens?: number, temperature?: number) {
     if (!loadedModel) throw new Error("No model loaded")
+
+    const promptForModel = context
+      ? `Use this selected PDF context to answer the user's question.\n\nSelected context:\n${context}\n\nUser question:\n${prompt}`
+      : prompt
 
     addChatMessage({ role: "user", content: prompt })
     setIsGenerating(true)
     setStreamingToken("")
 
-    await invoke("generate", { prompt, maxTokens, temperature })
+    if (loadedModel.source === "cloud") {
+      const messages: ChatMessage[] = [
+        ...chatMessages,
+        { role: "user", content: promptForModel },
+      ]
+
+      await invoke("generate_cloud", {
+        baseUrl: loadedModel.baseUrl,
+        apiKey: loadedModel.apiKey,
+        model: loadedModel.modelName,
+        messages,
+        maxTokens,
+        temperature,
+      })
+    } else {
+      await invoke("generate", { prompt: promptForModel, maxTokens, temperature })
+    }
   }
 
   async function stopGeneration() {
@@ -98,6 +115,10 @@ export function useAi() {
     return await invoke<ModelEntry>("get_model_info", { modelId })
   }
 
+  async function testCloudModel(baseUrl: string, apiKey: string, model: string) {
+    return await invoke<CloudTestResult>("test_cloud_model", { baseUrl, apiKey, model })
+  }
+
   return {
     loadedModel,
     isGenerating,
@@ -109,6 +130,7 @@ export function useAi() {
     downloadModel,
     deleteModel,
     get_model_info,
+    testCloudModel,
     chatMessages,
   }
 }

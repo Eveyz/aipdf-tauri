@@ -3,8 +3,10 @@ use crate::state::AppState;
 use crate::commands::CommandError;
 use crate::models::registry::{self, ModelEntry};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 
 #[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct ModelInfo {
     pub id: String,
     pub name: String,
@@ -18,6 +20,18 @@ pub struct TokenPayload {
     pub token: String,
     pub token_id: i64,
     pub is_final: bool,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct ChatMessage {
+    pub role: String,
+    pub content: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct CloudTestResult {
+    pub ok: bool,
+    pub message: String,
 }
 
 #[tauri::command]
@@ -105,6 +119,123 @@ pub async fn generate(
                 is_final: true,
             });
         }
+    });
+
+    Ok(())
+}
+
+fn normalize_openai_base_url(base_url: &str) -> String {
+    let trimmed = base_url.trim().trim_end_matches('/');
+    if trimmed.ends_with("/chat/completions") {
+        trimmed.to_string()
+    } else if trimmed.ends_with("/v1") {
+        format!("{}/chat/completions", trimmed)
+    } else {
+        format!("{}/v1/chat/completions", trimmed)
+    }
+}
+
+async fn request_cloud_chat(
+    base_url: String,
+    api_key: String,
+    model: String,
+    messages: Vec<ChatMessage>,
+    max_tokens: Option<usize>,
+    temperature: Option<f32>,
+) -> Result<String, CommandError> {
+    let url = normalize_openai_base_url(&base_url);
+    let client = reqwest::Client::new();
+    let response = client
+        .post(url)
+        .bearer_auth(api_key)
+        .json(&json!({
+            "model": model,
+            "messages": messages,
+            "max_tokens": max_tokens.unwrap_or(1024),
+            "temperature": temperature.unwrap_or(0.7),
+            "stream": false,
+        }))
+        .send()
+        .await
+        .map_err(|e| CommandError::Ai(e.to_string()))?;
+
+    let status = response.status();
+    let body = response
+        .text()
+        .await
+        .map_err(|e| CommandError::Ai(e.to_string()))?;
+
+    if !status.is_success() {
+        return Err(CommandError::Ai(format!("Cloud model request failed: {} {}", status, body)));
+    }
+
+    let value: serde_json::Value = serde_json::from_str(&body)
+        .map_err(|e| CommandError::Ai(format!("Invalid cloud response: {}", e)))?;
+
+    value
+        .get("choices")
+        .and_then(|choices| choices.get(0))
+        .and_then(|choice| choice.get("message"))
+        .and_then(|message| message.get("content"))
+        .and_then(|content| content.as_str())
+        .map(|content| content.to_string())
+        .ok_or_else(|| CommandError::Ai("Cloud response did not include choices[0].message.content".into()))
+}
+
+#[tauri::command]
+pub async fn test_cloud_model(
+    base_url: String,
+    api_key: String,
+    model: String,
+) -> Result<CloudTestResult, CommandError> {
+    let messages = vec![ChatMessage {
+        role: "user".into(),
+        content: "Reply with exactly: ok".into(),
+    }];
+
+    match request_cloud_chat(base_url, api_key, model, messages, Some(8), Some(0.0)).await {
+        Ok(_) => Ok(CloudTestResult {
+            ok: true,
+            message: "Connection successful".into(),
+        }),
+        Err(e) => Ok(CloudTestResult {
+            ok: false,
+            message: e.to_string(),
+        }),
+    }
+}
+
+#[tauri::command]
+pub async fn generate_cloud(
+    app: AppHandle,
+    base_url: String,
+    api_key: String,
+    model: String,
+    messages: Vec<ChatMessage>,
+    max_tokens: Option<usize>,
+    temperature: Option<f32>,
+) -> Result<(), CommandError> {
+    tokio::spawn(async move {
+        let result = request_cloud_chat(
+            base_url,
+            api_key,
+            model,
+            messages,
+            max_tokens,
+            temperature,
+        )
+        .await;
+
+        let token = match result {
+            Ok(content) => content,
+            Err(e) => format!("Error: {}", e),
+        };
+
+        let _ = app.emit("ai-token", TokenPayload {
+            token,
+            token_id: 0,
+            is_final: true,
+        });
     });
 
     Ok(())
