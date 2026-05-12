@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core"
 import { listen } from "@tauri-apps/api/event"
 import { useEffect } from "react"
-import { useStore, type ModelInfo, type ModelEntry, type ChatMessage } from "../store"
+import { useStore, type ModelInfo, type ModelEntry } from "../store"
 
 interface TokenPayload {
   token: string
@@ -79,10 +79,10 @@ export function useAi() {
     setStreamingToken("")
 
     if (loadedModel.source === "cloud") {
-      const messages: ChatMessage[] = [
-        { id: "system", role: "system", content: systemPrompt },
-        ...currentMessages.map(m => ({ role: m.role, content: m.content })),
-        { role: "user", content: promptForModel },
+      const messages = [
+        { id: "system", role: "system" as const, content: systemPrompt },
+        ...currentMessages.map(m => ({ id: m.id, role: m.role, content: m.content })),
+        { id: crypto.randomUUID(), role: "user" as const, content: promptForModel },
       ]
 
       await invoke("generate_cloud", {

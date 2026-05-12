@@ -15,7 +15,7 @@ export interface ChatMessage {
 }
 
 export interface ChatContext {
-  type: "page" | "text"
+  type: "file" | "page" | "text"
   content: string
   label?: string
   id: string
@@ -69,8 +69,6 @@ export interface ChatSession {
 }
 
 const CLOUD_MODELS_STORAGE_KEY = "aipdf-cloud-models"
-const CHAT_SESSIONS_STORAGE_KEY = "aipdf-chat-sessions"
-const ACTIVE_SESSION_KEY = "aipdf-active-session"
 
 function readCloudModels(): CloudModelEntry[] {
   if (typeof window === "undefined") return []
@@ -85,41 +83,6 @@ function readCloudModels(): CloudModelEntry[] {
 function writeCloudModels(models: CloudModelEntry[]) {
   if (typeof window !== "undefined") {
     window.localStorage.setItem(CLOUD_MODELS_STORAGE_KEY, JSON.stringify(models))
-  }
-}
-
-function readSessions(): ChatSession[] {
-  if (typeof window === "undefined") return []
-  try {
-    const raw = window.localStorage.getItem(CHAT_SESSIONS_STORAGE_KEY)
-    return raw ? JSON.parse(raw) : []
-  } catch {
-    return []
-  }
-}
-
-function writeSessions(sessions: ChatSession[]) {
-  if (typeof window !== "undefined") {
-    window.localStorage.setItem(CHAT_SESSIONS_STORAGE_KEY, JSON.stringify(sessions))
-  }
-}
-
-function readActiveSession(): string | null {
-  if (typeof window === "undefined") return null
-  try {
-    return window.localStorage.getItem(ACTIVE_SESSION_KEY)
-  } catch {
-    return null
-  }
-}
-
-function writeActiveSession(id: string | null) {
-  if (typeof window !== "undefined") {
-    if (id) {
-      window.localStorage.setItem(ACTIVE_SESSION_KEY, id)
-    } else {
-      window.localStorage.removeItem(ACTIVE_SESSION_KEY)
-    }
   }
 }
 
@@ -229,10 +192,6 @@ export const useStore = create<AppState>((set, get) => ({
       
       set({ sessions: mappedSessions, lastPdfPath: lastPdf })
       
-      // Note: We don't restore the active session on startup anymore as per request
-      // (start a new empty session). But we might want to keep activeSessionId null
-      // until user opens PDF or creates one.
-      writeActiveSession(null)
       set({ activeSessionId: null, chatMessages: [] })
     } catch (e) {
       console.error("Failed to init store:", e)
@@ -342,7 +301,6 @@ export const useStore = create<AppState>((set, get) => ({
         streamingToken: "",
         showSessions: false,
       }))
-      writeActiveSession(newSession.id)
     } catch (e) {
       console.error("Failed to create session:", e)
     }
@@ -361,7 +319,6 @@ export const useStore = create<AppState>((set, get) => ({
         streamingToken: "",
         showSessions: false,
       })
-      writeActiveSession(id)
     } catch (e) {
       console.error("Failed to switch session:", e)
     }
@@ -373,7 +330,6 @@ export const useStore = create<AppState>((set, get) => ({
         const updatedSessions = state.sessions.filter((s) => s.id !== id)
         const newState: Partial<AppState> = { sessions: updatedSessions }
         if (state.activeSessionId === id) {
-          writeActiveSession(null)
           newState.activeSessionId = null
           newState.chatMessages = []
           newState.streamingToken = ""

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react"
-import { Plus } from "lucide-react"
+import { Plus, X } from "lucide-react"
 import { usePdf, type PageTextResult } from "../hooks/usePdf"
 import { useStore } from "../store"
+import { cn } from "../lib/utils"
 
 const CSS_PIXELS_PER_PDF_POINT = 96 / 72
 const MAX_RENDER_SCALE = 5
@@ -89,6 +90,12 @@ function buildTextLines(pageText: PageTextResult | undefined): TextLine[] {
     .sort((a, b) => a.top - b.top || a.left - b.left)
 }
 
+// Mock document tabs
+const MOCK_TABS = [
+  { id: "1", name: "deep_learning.pdf", active: true },
+  { id: "2", name: "nvidia_slm.pdf", active: false },
+]
+
 export function PdfViewer() {
   const { renderPage, getPageText } = usePdf()
   const {
@@ -107,7 +114,6 @@ export function PdfViewer() {
     ? Math.round(pdfInfo.pageHeight * CSS_PIXELS_PER_PDF_POINT * zoom)
     : 0
 
-  // Scale from PDF points to CSS pixels
   const scaleX = pdfInfo ? displayWidth / pdfInfo.pageWidth : 1
   const scaleY = pdfInfo ? displayHeight / pdfInfo.pageHeight : 1
 
@@ -121,10 +127,8 @@ export function PdfViewer() {
 
   useEffect(() => {
     if (pdfInfo && renderedPages[currentPage] === undefined) {
-      console.log(`[PdfViewer] triggering render for page ${currentPage}`)
       renderPage(currentPage, renderScale).catch((e) => {
         console.error("[PdfViewer] renderPage failed:", e)
-        alert("Failed to render page: " + e)
       })
     }
   }, [pdfInfo, currentPage, renderPage, renderedPages, renderScale])
@@ -154,85 +158,108 @@ export function PdfViewer() {
       addChatContext({
         type: "text",
         content: selectedText,
+        label: selectedText.slice(0, 30) + (selectedText.length > 30 ? "..." : ""),
         id: crypto.randomUUID(),
       })
     }
   }
 
   function handleAddPage() {
-    if (!pageText) return
     addChatContext({
       type: "page",
-      content: pageText.full_text,
-      label: `Page ${currentPage + 1}`,
+      content: `Page ${currentPage + 1}`,
+      label: `p.${currentPage + 1} (${pdfInfo!.fileName.replace(".pdf", "").slice(0, 15)}...)`,
       id: `page-${currentPage}`,
     })
   }
 
   return (
-    <div className="h-full min-w-0 overflow-auto bg-[#F9F9FB] p-4">
-      {imageData ? (
-        <div className="flex min-h-full min-w-max items-start justify-center">
+    <div className="flex h-full min-h-0 min-w-0 flex-col bg-[#F9F9FB]">
+      {/* Document Tabs */}
+      <div className="flex shrink-0 items-end px-2 pt-2 bg-[#F9F9FB] border-b border-gray-200 overflow-x-auto">
+        {MOCK_TABS.map((tab) => (
           <div
-            className="group relative shrink-0 bg-white shadow-sm rounded-sm"
-            style={{ width: displayWidth, height: displayHeight }}
-          >
-            <img
-              src={`data:image/png;base64,${imageData}`}
-              alt={`Page ${currentPage + 1}`}
-              className="absolute inset-0 h-full w-full select-none"
-              draggable={false}
-            />
-
-            {/* Hover "Add Page" button */}
-            <button
-              onClick={handleAddPage}
-              className="absolute top-3 right-3 bg-white/80 backdrop-blur-md shadow-[0_4px_12px_rgba(0,0,0,0.08)] text-gray-700 text-xs px-3 py-1.5 rounded-full flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200 cursor-pointer hover:bg-white/90 z-10"
-            >
-              <Plus className="h-3 w-3" />
-              Add Page {currentPage + 1}
-            </button>
-
-            {textLines.length > 0 && (
-              <div
-                className="pdf-text-layer absolute inset-0 select-text overflow-hidden"
-                onMouseUp={captureSelectionContext}
-                onKeyUp={captureSelectionContext}
-              >
-                {textLines.map((line, index) => {
-                  const cssLeft = line.left * scaleX
-                  const cssTop = line.top * scaleY
-                  const cssWidth = Math.max(line.width * scaleX, 1)
-                  const cssHeight = Math.max(line.height * scaleY, 1)
-                  const cssFontSize = Math.max(line.fontSize * scaleY, 1)
-
-                  return (
-                    <span
-                      key={index}
-                      className="pdf-text-line absolute cursor-text whitespace-pre"
-                      style={{
-                        left: cssLeft,
-                        top: cssTop,
-                        width: cssWidth,
-                        height: cssHeight,
-                        fontSize: cssFontSize,
-                        lineHeight: 1,
-                      }}
-                    >
-                      {line.text}
-                    </span>
-                  )
-                })}
-              </div>
+            key={tab.id}
+            className={cn(
+              "group flex items-center gap-2 px-3 py-1.5 text-sm transition-colors rounded-t-lg relative",
+              tab.active
+                ? "bg-white border-t border-x border-gray-200 text-gray-800 font-medium z-10 -mb-[1px]"
+                : "text-gray-500 hover:text-gray-700 hover:bg-gray-100/50 border-t border-x border-transparent cursor-pointer"
             )}
+          >
+            <span className="truncate max-w-[160px]">{tab.name}</span>
+            <button className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-gray-200 transition-all">
+              <X className="h-3 w-3" />
+            </button>
           </div>
-        </div>
-      ) : (
-        <div className="flex h-full items-center justify-center gap-2 text-muted-foreground">
-          <div className="h-5 w-5 animate-spin rounded-full border-2 border-current border-t-transparent" />
-          Rendering page...
-        </div>
-      )}
+        ))}
+      </div>
+
+      {/* Main Canvas */}
+      <div className="min-h-0 flex-1 overflow-auto p-4 scrollbar-thin">
+        {imageData ? (
+          <div className="flex min-h-full min-w-max items-start justify-center">
+            <div
+              className="group relative shrink-0 bg-white shadow-sm rounded-sm"
+              style={{ width: displayWidth, height: displayHeight }}
+            >
+              <img
+                src={`data:image/png;base64,${imageData}`}
+                alt={`Page ${currentPage + 1}`}
+                className="absolute inset-0 h-full w-full select-none"
+                draggable={false}
+              />
+
+              {/* Hover "Add Page" button */}
+              <button
+                onClick={handleAddPage}
+                className="absolute top-3 right-3 bg-white/80 backdrop-blur-md shadow-[0_4px_12px_rgba(0,0,0,0.08)] text-gray-700 text-xs px-3 py-1.5 rounded-full flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200 cursor-pointer hover:bg-white/90 z-10"
+              >
+                <Plus className="h-3 w-3" />
+                Add Page {currentPage + 1}
+              </button>
+
+              {textLines.length > 0 && (
+                <div
+                  className="pdf-text-layer absolute inset-0 select-text overflow-hidden"
+                  onMouseUp={captureSelectionContext}
+                  onKeyUp={captureSelectionContext}
+                >
+                  {textLines.map((line, index) => {
+                    const cssLeft = line.left * scaleX
+                    const cssTop = line.top * scaleY
+                    const cssWidth = Math.max(line.width * scaleX, 1)
+                    const cssHeight = Math.max(line.height * scaleY, 1)
+                    const cssFontSize = Math.max(line.fontSize * scaleY, 1)
+
+                    return (
+                      <span
+                        key={index}
+                        className="pdf-text-line absolute cursor-text whitespace-pre"
+                        style={{
+                          left: cssLeft,
+                          top: cssTop,
+                          width: cssWidth,
+                          height: cssHeight,
+                          fontSize: cssFontSize,
+                          lineHeight: 1,
+                        }}
+                      >
+                        {line.text}
+                      </span>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="flex h-full items-center justify-center gap-2 text-muted-foreground">
+            <div className="h-5 w-5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+            Rendering page...
+          </div>
+        )}
+      </div>
     </div>
   )
 }

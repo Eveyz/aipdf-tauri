@@ -10,11 +10,7 @@ import {
   ChevronRight,
   ChevronUp,
   Pencil,
-  FileText,
-  Type,
   Copy,
-  ThumbsUp,
-  ThumbsDown,
   RotateCcw,
   Loader2,
   Wand2,
@@ -32,16 +28,14 @@ import {
   SelectValue,
 } from "./ui/select"
 
-// Page tag pill for context display
+// Context pill for context display (file, page, text)
 function ContextPill({ ctx }: { ctx: ChatContext }) {
+  const iconChar = ctx.type === "file" ? "📁" : ctx.type === "page" ? "🔖" : "📝"
+
   return (
-    <span className="flex items-center gap-1.5 px-2 py-1 bg-white border border-gray-200 rounded-md shadow-sm text-xs text-gray-500 font-medium">
-      {ctx.type === "page" ? (
-        <FileText className="h-3 w-3 shrink-0 text-gray-400" />
-      ) : (
-        <Type className="h-3 w-3 shrink-0 text-gray-400" />
-      )}
-      <span className="truncate max-w-[140px]">{ctx.label || ctx.content}</span>
+    <span className="flex items-center gap-1.5 px-2 py-1 bg-white border border-slate-200 rounded shadow-sm text-[11px] text-slate-600 font-mono max-w-[180px]">
+      <span className="shrink-0">{iconChar}</span>
+      <span className="truncate">{ctx.label || ctx.content}</span>
     </span>
   )
 }
@@ -458,17 +452,15 @@ export function ChatPanel() {
             {chatContexts.map((ctx) => (
               <span
                 key={ctx.id}
-                className="bg-gray-100 text-gray-700 text-xs px-2.5 py-1 rounded-full flex items-center gap-1.5 border border-gray-200/80 max-w-[200px]"
+                className="flex items-center gap-1.5 px-2 py-1 bg-white border border-slate-200 rounded shadow-sm text-[11px] text-slate-600 font-mono max-w-[180px]"
               >
-                {ctx.type === "page" ? (
-                  <FileText className="h-3 w-3 shrink-0 text-gray-500" />
-                ) : (
-                  <Type className="h-3 w-3 shrink-0 text-gray-500" />
-                )}
-                <span className="truncate">{ctx.content}</span>
+                <span className="shrink-0">
+                  {ctx.type === "file" ? "📁" : ctx.type === "page" ? "🔖" : "📝"}
+                </span>
+                <span className="truncate">{ctx.label || ctx.content}</span>
                 <button
                   onClick={() => removeChatContext(ctx.id)}
-                  className="h-4 w-4 shrink-0 flex items-center justify-center rounded-full hover:bg-gray-200 hover:text-gray-900 cursor-pointer transition-colors"
+                  className="h-4 w-4 shrink-0 flex items-center justify-center rounded-full hover:bg-gray-100 hover:text-gray-900 cursor-pointer transition-colors"
                 >
                   <X className="h-2.5 w-2.5" />
                 </button>

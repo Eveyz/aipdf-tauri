@@ -6,6 +6,8 @@ import {
   FileSearch,
   Feather,
   Calendar,
+  Plus,
+  File,
 } from "lucide-react"
 import { ScrollArea } from "./ui/scroll-area"
 import { useStore } from "../store"
@@ -18,6 +20,12 @@ const TABS: { id: SidebarTab; label: string; icon: typeof FileText }[] = [
   { id: "outline", label: "Outline", icon: FileText },
   { id: "extraction", label: "Extraction", icon: Sparkles },
   { id: "notes", label: "Notes", icon: StickyNote },
+]
+
+// Mock files data
+const MOCK_FILES = [
+  { id: "1", name: "deep_learning.pdf", active: true },
+  { id: "2", name: "nvidia_slm.pdf", active: false },
 ]
 
 // Mock outline data
@@ -79,7 +87,6 @@ const MOCK_NOTES = [
   },
 ]
 
-// Generic empty state component
 function EmptyState({ icon: Icon, message }: { icon: typeof FileText; message: string }) {
   return (
     <div className="flex flex-col items-center justify-center h-40 text-center px-6">
@@ -89,7 +96,6 @@ function EmptyState({ icon: Icon, message }: { icon: typeof FileText; message: s
   )
 }
 
-// Page tag pill component
 function PageTag({ page }: { page: number }) {
   return (
     <span className="text-[10px] text-gray-400 bg-white border border-gray-200 px-1.5 py-0.5 rounded">
@@ -137,7 +143,6 @@ function ExtractionTab() {
 
   return (
     <div className="py-2">
-      {/* Key Models */}
       {MOCK_EXTRACTIONS.models.length > 0 && (
         <>
           <p className="text-[11px] uppercase tracking-wider text-gray-400 font-semibold mt-4 mb-2 px-4">
@@ -151,9 +156,7 @@ function ExtractionTab() {
               style={{ width: "calc(100% - 2rem)" }}
             >
               <div className="flex items-center justify-between gap-2">
-                <span className="text-sm font-medium text-gray-800 truncate">
-                  {item.title}
-                </span>
+                <span className="text-sm font-medium text-gray-800 truncate">{item.title}</span>
                 <PageTag page={item.page} />
               </div>
               <p className="text-xs text-gray-500 line-clamp-1">{item.subtitle}</p>
@@ -162,7 +165,6 @@ function ExtractionTab() {
         </>
       )}
 
-      {/* Core Concepts */}
       {MOCK_EXTRACTIONS.concepts.length > 0 && (
         <>
           <p className="text-[11px] uppercase tracking-wider text-gray-400 font-semibold mt-4 mb-2 px-4">
@@ -176,9 +178,7 @@ function ExtractionTab() {
               style={{ width: "calc(100% - 2rem)" }}
             >
               <div className="flex items-center justify-between gap-2">
-                <span className="text-sm font-medium text-gray-800 truncate">
-                  {item.title}
-                </span>
+                <span className="text-sm font-medium text-gray-800 truncate">{item.title}</span>
                 <PageTag page={item.page} />
               </div>
               <p className="text-xs text-gray-500 line-clamp-1">{item.subtitle}</p>
@@ -208,9 +208,7 @@ function NotesTab() {
         >
           <div className={cn("absolute left-0 top-0 bottom-0 w-1", note.color)} />
           <div className="pl-2">
-            <p className="text-xs text-gray-700 leading-relaxed italic line-clamp-3">
-              {note.text}
-            </p>
+            <p className="text-xs text-gray-700 leading-relaxed italic line-clamp-3">{note.text}</p>
             <div className="flex items-center gap-2 mt-2">
               <PageTag page={note.page} />
               <span className="flex items-center gap-1 text-[10px] text-gray-400">
@@ -239,34 +237,68 @@ export function DocumentSidebar() {
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col bg-white">
-      {/* Sticky header with tabs */}
-      <div className="shrink-0 sticky top-0 z-10 bg-white">
-        <div className="flex items-center gap-4 px-4 pt-3 pb-0">
-          {TABS.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={cn(
-                "flex items-center gap-1.5 pb-2.5 transition-colors text-xs",
-                activeTab === tab.id
-                  ? "text-gray-900 font-medium border-b-2 border-gray-900"
-                  : "text-gray-400 hover:text-gray-600 font-normal border-b-2 border-transparent"
-              )}
-            >
-              <tab.icon className="h-3.5 w-3.5" />
-              {tab.label}
-            </button>
-          ))}
+      {/* Top Section: FILES (Workspace) */}
+      <div className="flex flex-col h-1/3 min-h-[200px] border-b border-gray-200">
+        <div className="shrink-0 px-4 py-3 text-[11px] font-semibold text-gray-400 uppercase tracking-wider flex justify-between items-center">
+          <span>Files</span>
+          <button className="hover:text-gray-600 transition-colors">
+            <Plus className="h-3 w-3" />
+          </button>
         </div>
-        <div className="h-px bg-gray-100" />
+
+        <ScrollArea className="scrollbar-thin flex-1">
+          <div className="flex flex-col gap-0.5 px-2 pb-2">
+            {MOCK_FILES.map((file) => (
+              <div
+                key={file.id}
+                className={cn(
+                  "mx-2 px-2 py-1.5 flex items-center gap-2 text-sm rounded-md cursor-pointer transition-colors group",
+                  file.active
+                    ? "bg-gray-100 text-gray-900 font-medium"
+                    : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+                )}
+              >
+                <File className="h-3.5 w-3.5 shrink-0 opacity-70" />
+                <span className="truncate">{file.name}</span>
+              </div>
+            ))}
+          </div>
+        </ScrollArea>
       </div>
 
-      {/* Tab content */}
-      <ScrollArea className="scrollbar-thin min-h-0 flex-1">
-        {activeTab === "outline" && <OutlineTab />}
-        {activeTab === "extraction" && <ExtractionTab />}
-        {activeTab === "notes" && <NotesTab />}
-      </ScrollArea>
+      {/* Bottom Section: ACTIVE DOCUMENT */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <div className="shrink-0 px-4 pt-3 pb-0 text-[11px] font-semibold text-gray-400 uppercase tracking-wider">
+          Active Document
+        </div>
+
+        <div className="shrink-0">
+          <div className="flex items-center gap-4 px-4 pt-2 pb-0">
+            {TABS.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={cn(
+                  "flex items-center gap-1.5 pb-2.5 transition-colors text-xs border-b-2",
+                  activeTab === tab.id
+                    ? "text-gray-900 font-medium border-gray-900"
+                    : "text-gray-400 hover:text-gray-600 font-normal border-transparent"
+                )}
+              >
+                <tab.icon className="h-3.5 w-3.5" />
+                {tab.label}
+              </button>
+            ))}
+          </div>
+          <div className="h-px bg-gray-100 mx-4" />
+        </div>
+
+        <ScrollArea className="scrollbar-thin min-h-0 flex-1">
+          {activeTab === "outline" && <OutlineTab />}
+          {activeTab === "extraction" && <ExtractionTab />}
+          {activeTab === "notes" && <NotesTab />}
+        </ScrollArea>
+      </div>
     </div>
   )
 }
