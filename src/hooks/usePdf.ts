@@ -29,7 +29,7 @@ export interface PageTextResult {
 }
 
 export function usePdf() {
-  const { setPdfInfo, setCurrentPage, setRenderedPage, pdfInfo, currentPage, zoom, renderedPages } = useStore()
+  const { setPdfInfo, setCurrentPage, setRenderedPage, setRenderedPageDim, pdfInfo, currentPage, zoom, renderedPages } = useStore()
 
   async function openPdf(path: string) {
     const info = await invoke<PdfInfoResult>("open_pdf", { path })
@@ -39,6 +39,14 @@ export function usePdf() {
       pageWidth: info.page_width,
       pageHeight: info.page_height,
     })
+    
+    // Save last viewed path
+    const { setLastPdfPath, createSession } = useStore.getState()
+    setLastPdfPath(path)
+
+    // Always start a new session when opening a PDF
+    await createSession()
+
     return info
   }
 
@@ -48,6 +56,7 @@ export function usePdf() {
     const result = await invoke<RenderResult>("render_page", { pageIndex, scale: s })
     console.log(`[usePdf] render_page returned, image_base64 length: ${result.image_base64.length}`)
     setRenderedPage(pageIndex, result.image_base64)
+    setRenderedPageDim(pageIndex, result.width, result.height)
     console.log(`[usePdf] setRenderedPage called`)
     return result
   }

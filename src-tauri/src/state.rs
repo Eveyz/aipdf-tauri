@@ -35,8 +35,8 @@ impl Default for AiState {
     }
 }
 
-#[derive(Default)]
 pub struct AppState {
     pub pdf: Mutex<PdfState>,
     pub ai: Mutex<AiState>,
+    pub db: crate::db::DbManager,
 }

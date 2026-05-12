@@ -3,16 +3,33 @@ mod pdf;
 mod ai;
 mod models;
 mod state;
+mod db;
 
 use state::AppState;
+use std::sync::Mutex;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let app_dir = dirs::data_dir()
+        .unwrap_or_else(|| std::env::current_dir().unwrap())
+        .join("aipdf");
+    
+    if !app_dir.exists() {
+        std::fs::create_dir_all(&app_dir).expect("Failed to create app directory");
+    }
+
+    let db_path = app_dir.join("aipdf.db");
+    let db = db::DbManager::new(db_path).expect("Failed to initialize database");
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
-        .manage(AppState::default())
+        .manage(AppState {
+            pdf: Mutex::new(state::PdfState::default()),
+            ai: Mutex::new(state::AiState::default()),
+            db,
+        })
         .invoke_handler(tauri::generate_handler![
             commands::pdf::open_pdf,
             commands::pdf::get_page_count,
@@ -29,6 +46,12 @@ pub fn run() {
             commands::ai::download_model,
             commands::ai::delete_model,
             commands::ai::get_model_info,
+            commands::ai::create_session,
+            commands::ai::list_sessions,
+            commands::ai::delete_session,
+            commands::ai::rename_session,
+            commands::ai::get_messages,
+            commands::ai::get_setting,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

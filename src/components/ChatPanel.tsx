@@ -1,9 +1,28 @@
 import { useEffect, useRef, useState } from "react"
-import { Send, Square, Trash2, X } from "lucide-react"
+import {
+  Send,
+  Square,
+  Trash2,
+  X,
+  Plus,
+  MessageSquare,
+  ChevronDown,
+  ChevronRight,
+  ChevronUp,
+  Pencil,
+  FileText,
+  Type,
+  Copy,
+  ThumbsUp,
+  ThumbsDown,
+  RotateCcw,
+  Loader2,
+  Wand2,
+  Check,
+} from "lucide-react"
 import ReactMarkdown from "react-markdown"
 import { useAi } from "../hooks/useAi"
-import { useStore } from "../store"
-import { Button } from "./ui/button"
+import { useStore, type ChatContext } from "../store"
 import { ScrollArea } from "./ui/scroll-area"
 import {
   Select,
@@ -12,6 +31,94 @@ import {
   SelectTrigger,
   SelectValue,
 } from "./ui/select"
+
+// Page tag pill for context display
+function ContextPill({ ctx }: { ctx: ChatContext }) {
+  return (
+    <span className="flex items-center gap-1.5 px-2 py-1 bg-white border border-gray-200 rounded-md shadow-sm text-xs text-gray-500 font-medium">
+      {ctx.type === "page" ? (
+        <FileText className="h-3 w-3 shrink-0 text-gray-400" />
+      ) : (
+        <Type className="h-3 w-3 shrink-0 text-gray-400" />
+      )}
+      <span className="truncate max-w-[140px]">{ctx.label || ctx.content}</span>
+    </span>
+  )
+}
+
+// Thinking state indicator
+function ThinkingIndicator({ isStreaming, isWaiting }: { isStreaming: boolean, isWaiting?: boolean }) {
+  const [expanded, setExpanded] = useState(false)
+
+  return (
+    <div className="mb-2">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className={`flex items-center gap-2 text-xs text-gray-500 hover:text-gray-700 cursor-pointer transition-colors ${isWaiting ? "animate-pulse" : ""}`}
+      >
+        {isStreaming || isWaiting ? (
+          <Loader2 className="h-3 w-3 animate-spin" />
+        ) : (
+          <Wand2 className="h-3 w-3" />
+        )}
+        <span>{isStreaming || isWaiting ? "Thinking..." : "Analyzed context"}</span>
+        {expanded ? (
+          <ChevronUp className="h-3 w-3 text-gray-400" />
+        ) : (
+          <ChevronRight className="h-3 w-3 text-gray-400" />
+        )}
+      </button>
+      {expanded && (
+        <div className="border-l-2 border-gray-200 pl-3 py-1 my-2 text-xs text-gray-500 italic leading-relaxed">
+          {isWaiting ? "Connecting to model..." : "Processing document context and formulating response..."}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Action bar that appears on hover
+function ActionBar({ content, onRetry }: { content: string, onRetry?: () => void }) {
+  const [copied, setCopied] = useState(false)
+
+  async function handleCopy() {
+    try {
+      await navigator.clipboard.writeText(content)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch (err) {
+      console.error("Failed to copy text: ", err)
+    }
+  }
+
+  return (
+    <div className="flex items-center justify-between mt-3 transition-opacity duration-200">
+      <div className="flex items-center gap-1">
+        <button
+          onClick={onRetry}
+          className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-md transition-colors cursor-pointer outline-none focus-visible:ring-1 focus-visible:ring-slate-200"
+          title="Regenerate"
+        >
+          <RotateCcw className="w-3.5 h-3.5" />
+        </button>
+        <button
+          onClick={handleCopy}
+          className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-md transition-colors cursor-pointer outline-none focus-visible:ring-1 focus-visible:ring-slate-200"
+          title="Copy"
+        >
+          {copied ? (
+            <Check className="w-3.5 h-3.5 text-green-500" />
+          ) : (
+            <Copy className="w-3.5 h-3.5" />
+          )}
+        </button>
+      </div>
+      <span className="text-[11px] text-gray-400 font-mono tracking-tight">
+        mimo-v2.5-pro
+      </span>
+    </div>
+  )
+}
 
 export function ChatPanel() {
   const { generate, stopGeneration } = useAi()
@@ -23,11 +130,48 @@ export function ChatPanel() {
     clearChat,
     cloudModels,
     setLoadedModel,
-    selectedPdfText,
-    setSelectedPdfText,
+    chatContexts,
+    removeChatContext,
+    clearChatContexts,
+    sessions,
+    activeSessionId,
+    showSessions,
+    createSession,
+    switchSession,
+    deleteSession,
+    renameSession,
+    setShowSessions,
   } = useStore()
+
   const [input, setInput] = useState("")
+  const [editingSessionId, setEditingSessionId] = useState<string | null>(null)
+  const [editName, setEditName] = useState("")
   const scrollRef = useRef<HTMLDivElement>(null)
+
+  // Auto-generate title for new sessions
+  useEffect(() => {
+    if (chatMessages.length === 2 && !isGenerating && activeSessionId) {
+      const firstUserMsg = chatMessages[0]
+      const firstAiMsg = chatMessages[1]
+      
+      if (firstUserMsg.role === "user" && firstAiMsg.role === "assistant") {
+        const session = sessions.find(s => s.id === activeSessionId)
+        // Only auto-generate if the name is still the default "Chat X"
+        if (session && /^Chat \d+$/.test(session.name)) {
+          const words = firstUserMsg.content.trim().split(/\s+/).slice(0, 4)
+          let newTitle = words.join(" ")
+          if (firstUserMsg.content.trim().split(/\s+/).length > 4) {
+            newTitle += "..."
+          }
+          
+          if (newTitle) {
+            // TODO: Replace with actual LLM API call to summarize title
+            renameSession(activeSessionId, newTitle)
+          }
+        }
+      }
+    }
+  }, [chatMessages, isGenerating, activeSessionId, sessions, renameSession])
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -38,8 +182,55 @@ export function ChatPanel() {
   async function handleSend() {
     const prompt = input.trim()
     if (!prompt || isGenerating) return
-    setInput("")
-    await generate(prompt, selectedPdfText || undefined)
+
+    try {
+      let currentSessionId = activeSessionId
+      if (!currentSessionId) {
+        await createSession()
+        // Wait for state to update or get it from store
+        currentSessionId = useStore.getState().activeSessionId
+      }
+
+      if (!currentSessionId) {
+        throw new Error("Failed to create or active a session")
+      }
+
+      setInput("")
+
+      // Capture current contexts before clearing
+      const contexts = chatContexts.length > 0 ? [...chatContexts] : undefined
+      const context = contexts
+        ? contexts
+            .map((c) => {
+              if (c.label) return `${c.label}:\n${c.content}`
+              return c.content
+            })
+            .join("\n\n")
+        : undefined
+
+      // Add user message with contexts
+      const { addChatMessage } = useStore.getState()
+      addChatMessage({ id: crypto.randomUUID(), role: "user", content: prompt, contexts })
+      clearChatContexts()
+
+      // Generate AI response
+      await generate(prompt, context)
+    } catch (err) {
+      console.error("Failed to send message:", err)
+      alert("Error: " + (err instanceof Error ? err.message : String(err)))
+    }
+  }
+
+  async function handleRetry(index: number) {
+    if (isGenerating) return
+    const messages = chatMessages.slice(0, index)
+    const lastUserMsg = messages[messages.length - 1]
+    if (lastUserMsg && lastUserMsg.role === "user") {
+      // Remove messages after index
+      const { setChatMessages } = useStore.getState()
+      setChatMessages(messages)
+      await generate(lastUserMsg.content)
+    }
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -66,134 +257,297 @@ export function ChatPanel() {
     })
   }
 
+  function handleStartRename(sessionId: string, currentName: string) {
+    setEditingSessionId(sessionId)
+    setEditName(currentName)
+  }
+
+  function handleSaveRename(sessionId: string) {
+    if (editName.trim()) {
+      renameSession(sessionId, editName.trim())
+    }
+    setEditingSessionId(null)
+    setEditName("")
+  }
+
+  function formatDate(timestamp: number) {
+    const date = new Date(timestamp)
+    const now = new Date()
+    const diff = now.getTime() - date.getTime()
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24))
+
+    if (days === 0) return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    if (days === 1) return "Yesterday"
+    if (days < 7) return date.toLocaleDateString([], { weekday: "short" })
+    return date.toLocaleDateString([], { month: "short", day: "numeric" })
+  }
+
   return (
-    <div className="flex h-full min-h-0 min-w-0 flex-col">
-      <div className="flex shrink-0 items-center justify-between border-b px-3 py-2">
-        <h3 className="shrink-0 text-sm font-medium">AI Chat</h3>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7 shrink-0"
-          onClick={clearChat}
-          disabled={chatMessages.length === 0}
+    <div className="flex h-full min-h-0 min-w-0 flex-col bg-white">
+      {/* Header */}
+      <div className="flex shrink-0 items-center justify-between border-b px-3 py-1.5">
+        <button
+          onClick={() => setShowSessions(!showSessions)}
+          className="flex items-center gap-1 text-[11px] font-semibold text-gray-400 uppercase tracking-wider hover:text-gray-600 transition-colors"
         >
-          <Trash2 className="h-3.5 w-3.5" />
-        </Button>
+          {showSessions ? (
+            <ChevronDown className="h-3 w-3" />
+          ) : (
+            <ChevronRight className="h-3 w-3" />
+          )}
+          <span>Sessions</span>
+        </button>
+        <button
+          className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-gray-100 text-gray-600 transition-colors"
+          onClick={createSession}
+          title="New session"
+        >
+          <Plus className="w-4 h-4" />
+        </button>
       </div>
 
-      <ScrollArea className="min-h-0 flex-1">
+      {/* Sessions list */}
+      {showSessions && (
+        <div className="shrink-0 border-b">
+          <ScrollArea className="max-h-40">
+            <div className="py-1">
+              {sessions.length === 0 ? (
+                <p className="px-3 py-2 text-xs font-normal text-muted-foreground">No sessions yet</p>
+              ) : (
+                sessions.map((session) => (
+                  <div
+                    key={session.id}
+                    className={`group relative flex items-center gap-2 px-3 py-2 text-xs cursor-pointer border border-transparent transition-all rounded-md mx-1 overflow-hidden hover:bg-gray-100 ${
+                      session.id === activeSessionId ? "font-medium" : "font-normal text-gray-600 hover:text-gray-900"
+                    }`}
+                    onClick={() => switchSession(session.id)}
+                  >
+                    <MessageSquare className={`h-3.5 w-3.5 shrink-0 ${session.id === activeSessionId ? "text-primary" : "text-gray-400"}`} />
+                    
+                    <div className="min-w-0 flex-1 pr-14 relative">
+                      {editingSessionId === session.id ? (
+                        <input
+                          autoFocus
+                          className="w-full bg-transparent text-xs font-normal outline-none border-b border-primary/30 pb-0.5"
+                          value={editName}
+                          onChange={(e) => setEditName(e.target.value)}
+                          onBlur={() => handleSaveRename(session.id)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") handleSaveRename(session.id)
+                            if (e.key === "Escape") {
+                              setEditingSessionId(null)
+                              setEditName("")
+                            }
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      ) : (
+                        <span className="block truncate">
+                          {session.name}
+                        </span>
+                      )}
+                    </div>
+                    
+                    <div className={`absolute right-2 flex items-center gap-1 pl-2 transition-opacity duration-200 bg-gray-100 ${editingSessionId === session.id ? "opacity-0" : "opacity-0 group-hover:opacity-100 focus-within:opacity-100"}`}>
+                      <button
+                        className="h-5 w-5 flex items-center justify-center rounded hover:bg-white hover:shadow-sm text-gray-400 hover:text-gray-900 transition-all"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleStartRename(session.id, session.name)
+                        }}
+                        title="Rename"
+                      >
+                        <Pencil className="h-3 w-3" />
+                      </button>
+                      <button
+                        className="h-5 w-5 flex items-center justify-center rounded hover:bg-white hover:shadow-sm text-gray-400 hover:text-destructive transition-all"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          deleteSession(session.id)
+                        }}
+                        title="Delete"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+
+                    {!editingSessionId && (
+                      <span className="absolute right-3 text-[10px] text-gray-400 group-hover:opacity-0 transition-opacity">
+                        {formatDate(session.updatedAt)}
+                      </span>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+          </ScrollArea>
+        </div>
+      )}
+
+      {/* Chat messages */}
+      <ScrollArea className="scrollbar-thin min-h-0 flex-1">
         <div ref={scrollRef} className="flex flex-col gap-3 p-3">
           {!loadedModel && (
-            <p className="text-center text-sm text-muted-foreground">
+            <p className="text-center text-xs font-normal text-muted-foreground">
               Load a model from settings to start chatting
             </p>
           )}
 
-          {chatMessages.map((msg, i) => (
+          {chatMessages.length === 0 && loadedModel && (
+            <div className="flex flex-col items-center justify-center gap-2 py-8 text-center">
+              <MessageSquare className="h-8 w-8 text-muted-foreground/40" />
+              <p className="text-xs font-normal text-muted-foreground">
+                Ask about the PDF
+              </p>
+            </div>
+          )}
+
+          {chatMessages.map((msg, idx) => (
             <div
-              key={i}
+              key={msg.id}
               className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
             >
-              <div
-                className={`max-w-[85%] overflow-hidden rounded-lg px-3 py-2 text-sm break-words ${
-                  msg.role === "user"
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-muted"
-                }`}
-              >
-                {msg.role === "assistant" ? (
-                  <div className="prose prose-sm dark:prose-invert max-w-none">
+              {msg.role === "user" ? (
+                /* User message */
+                <div className="max-w-[90%] flex flex-col items-end mb-4">
+                  <div className="bg-[#F8F9FB] border border-slate-100 px-3 py-1.5 rounded-xl shadow-sm">
+                    <p className="text-[13px] text-gray-800 leading-relaxed">{msg.content}</p>
+                  </div>
+                  {msg.contexts && msg.contexts.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {msg.contexts.map((ctx) => (
+                        <ContextPill key={ctx.id} ctx={ctx} />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                /* AI message */
+                <div className="max-w-[92%] mb-4">
+                  <ThinkingIndicator isStreaming={false} />
+                  <div className="prose prose-sm dark:prose-invert max-w-none text-xs leading-relaxed">
                     <ReactMarkdown>{msg.content}</ReactMarkdown>
                   </div>
-                ) : (
-                  msg.content
-                )}
-              </div>
+                  <ActionBar content={msg.content} onRetry={() => handleRetry(idx)} />
+                </div>
+              )}
             </div>
           ))}
 
-          {streamingToken && (
-            <div className="flex justify-start">
-              <div className="max-w-[85%] overflow-hidden rounded-lg bg-muted px-3 py-2 text-sm break-words">
-                <div className="prose prose-sm dark:prose-invert max-w-none">
-                  <ReactMarkdown>{streamingToken}</ReactMarkdown>
-                </div>
+          {/* Streaming message or Loading state */}
+          {(streamingToken || isGenerating) && (
+            <div className="flex justify-start mb-4">
+              <div className="max-w-[92%]">
+                <ThinkingIndicator isStreaming={!!streamingToken} isWaiting={!streamingToken} />
+                {streamingToken && (
+                  <div className="prose prose-sm dark:prose-invert max-w-none text-xs leading-relaxed">
+                    <ReactMarkdown>{streamingToken}</ReactMarkdown>
+                  </div>
+                )}
               </div>
             </div>
           )}
         </div>
       </ScrollArea>
 
-      <div className="shrink-0 border-t p-3">
-        <div className="overflow-hidden rounded-lg border bg-background shadow-sm">
-          {selectedPdfText && (
-            <div className="border-b bg-muted/50 px-3 py-2">
-              <div className="flex items-start gap-2">
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs font-medium text-muted-foreground">
-                    Selected PDF context
-                  </p>
-                  <p className="mt-1 line-clamp-3 text-xs leading-relaxed text-muted-foreground">
-                    {selectedPdfText}
-                  </p>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-6 w-6 shrink-0"
-                  onClick={() => setSelectedPdfText("")}
+      {/* Input area */}
+      <div className="shrink-0">
+        {/* Context pills (pending) */}
+        {chatContexts.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 px-3 pt-2 pb-1">
+            {chatContexts.map((ctx) => (
+              <span
+                key={ctx.id}
+                className="bg-gray-100 text-gray-700 text-xs px-2.5 py-1 rounded-full flex items-center gap-1.5 border border-gray-200/80 max-w-[200px]"
+              >
+                {ctx.type === "page" ? (
+                  <FileText className="h-3 w-3 shrink-0 text-gray-500" />
+                ) : (
+                  <Type className="h-3 w-3 shrink-0 text-gray-500" />
+                )}
+                <span className="truncate">{ctx.content}</span>
+                <button
+                  onClick={() => removeChatContext(ctx.id)}
+                  className="h-4 w-4 shrink-0 flex items-center justify-center rounded-full hover:bg-gray-200 hover:text-gray-900 cursor-pointer transition-colors"
                 >
-                  <X className="h-3.5 w-3.5" />
-                </Button>
+                  <X className="h-2.5 w-2.5" />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+
+        <div className="p-2">
+          <div className="relative rounded-xl border border-gray-200/60 bg-gray-50/50 focus-within:border-gray-300 focus-within:bg-white transition-colors">
+            <textarea
+              className="min-h-[56px] w-full resize-none bg-transparent px-3 py-2.5 text-sm font-normal outline-none placeholder:text-muted-foreground/50 disabled:cursor-not-allowed disabled:opacity-50"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={loadedModel ? "Ask about the PDF..." : "Load a model first..."}
+              disabled={!loadedModel}
+            />
+
+            <div className="flex items-center justify-between px-2.5 py-1.5">
+              <div className="flex items-center gap-1 min-w-0 flex-1">
+                <Select value={loadedModel?.id} onValueChange={handleModelSelect}>
+                  <SelectTrigger className="h-6 min-w-0 border-0 px-1.5 py-0 text-[11px] font-normal shadow-none bg-transparent hover:bg-accent/50 rounded transition-colors">
+                    <SelectValue placeholder="Select model" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {loadedModel?.source === "local" && (
+                      <SelectItem value={loadedModel.id} className="text-xs">
+                        {loadedModel.name}
+                      </SelectItem>
+                    )}
+                    {cloudModels.map((model) => (
+                      <SelectItem
+                        key={model.id}
+                        value={`cloud:${model.id}`}
+                        className="text-xs"
+                      >
+                        {model.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex items-center gap-0.5">
+                {chatMessages.length > 0 && (
+                  <button
+                    className="h-6 w-6 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors"
+                    onClick={clearChat}
+                    title="Clear chat"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </button>
+                )}
+
+                {isGenerating ? (
+                  <button
+                    className="h-6 w-6 flex items-center justify-center rounded text-destructive hover:bg-destructive/10 transition-colors"
+                    onClick={stopGeneration}
+                    title="Stop"
+                  >
+                    <Square className="h-3 w-3" />
+                  </button>
+                ) : (
+                  <button
+                    className={`h-6 w-6 flex items-center justify-center rounded transition-colors ${
+                      !loadedModel || !input.trim()
+                        ? "text-muted-foreground/40 cursor-not-allowed"
+                        : "text-foreground hover:bg-accent/50"
+                    }`}
+                    onClick={handleSend}
+                    disabled={!loadedModel || !input.trim()}
+                    title="Send"
+                  >
+                    <Send className="h-3.5 w-3.5" />
+                  </button>
+                )}
               </div>
             </div>
-          )}
-
-          <textarea
-            className="min-h-20 w-full resize-none bg-transparent px-3 py-2 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={loadedModel ? "Ask about the PDF..." : "Load a model first..."}
-            disabled={!loadedModel}
-          />
-
-          <div className="flex items-center gap-2 border-t px-2 py-2">
-            <Select value={loadedModel?.id} onValueChange={handleModelSelect}>
-              <SelectTrigger className="h-8 min-w-0 flex-1 border-0 px-2 shadow-none">
-                <SelectValue placeholder="Select model" />
-              </SelectTrigger>
-              <SelectContent>
-                {loadedModel?.source === "local" && (
-                  <SelectItem value={loadedModel.id}>{loadedModel.name}</SelectItem>
-                )}
-                {cloudModels.map((model) => (
-                  <SelectItem key={model.id} value={`cloud:${model.id}`}>
-                    {model.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            {isGenerating ? (
-              <Button
-                variant="destructive"
-                size="icon"
-                className="shrink-0"
-                onClick={stopGeneration}
-              >
-                <Square className="h-4 w-4" />
-              </Button>
-            ) : (
-              <Button
-                size="icon"
-                className="shrink-0"
-                onClick={handleSend}
-                disabled={!loadedModel || !input.trim()}
-              >
-                <Send className="h-4 w-4" />
-              </Button>
-            )}
           </div>
         </div>
       </div>

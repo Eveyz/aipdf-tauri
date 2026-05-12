@@ -10,7 +10,6 @@ import {
   ZoomIn,
   ZoomOut,
   RotateCcw,
-  Bot,
 } from "lucide-react"
 import { usePdf } from "../hooks/usePdf"
 import { useStore } from "../store"
@@ -35,7 +34,6 @@ export function Toolbar() {
     chatOpen,
     setChatOpen,
     setModelManagerOpen,
-    loadedModel,
   } = useStore()
 
   async function handleOpen() {
@@ -103,7 +101,7 @@ export function Toolbar() {
 
             <div className="flex items-center gap-1 text-sm">
               <Input
-                className="h-7 w-14 text-center"
+                className="h-7 w-14 text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 type="number"
                 min={1}
                 max={pdfInfo.pageCount}
@@ -175,52 +173,43 @@ export function Toolbar() {
 
         <div className="flex-1" />
 
-        {/* Model status */}
-        {loadedModel && (
-          <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-            <Bot className="h-4 w-4" />
-            <span className="max-w-32 truncate">{loadedModel.name}</span>
-          </div>
-        )}
-
-        <div className="mx-1 h-5 w-px bg-border" />
-
         {/* Toggle panels */}
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button
-              variant={sidebarOpen ? "secondary" : "ghost"}
-              size="icon"
+            <button
+              className={`w-7 h-7 flex items-center justify-center rounded-md transition-colors ${
+                sidebarOpen ? "bg-gray-100 text-gray-800" : "text-gray-600 hover:bg-gray-100"
+              }`}
               onClick={() => setSidebarOpen(!sidebarOpen)}
             >
-              <PanelLeft className="h-4 w-4" />
-            </Button>
+              <PanelLeft className="w-4 h-4" />
+            </button>
           </TooltipTrigger>
           <TooltipContent>Toggle sidebar</TooltipContent>
         </Tooltip>
 
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button
-              variant={chatOpen ? "secondary" : "ghost"}
-              size="icon"
+            <button
+              className={`w-7 h-7 flex items-center justify-center rounded-md transition-colors ${
+                chatOpen ? "bg-gray-100 text-gray-800" : "text-gray-600 hover:bg-gray-100"
+              }`}
               onClick={() => setChatOpen(!chatOpen)}
             >
-              <MessageSquare className="h-4 w-4" />
-            </Button>
+              <MessageSquare className="w-4 h-4" />
+            </button>
           </TooltipTrigger>
           <TooltipContent>Toggle chat</TooltipContent>
         </Tooltip>
 
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
+            <button
+              className="w-7 h-7 flex items-center justify-center rounded-md text-gray-600 hover:bg-gray-100 transition-colors"
               onClick={() => setModelManagerOpen(true)}
             >
-              <Settings2 className="h-4 w-4" />
-            </Button>
+              <Settings2 className="w-4 h-4" />
+            </button>
           </TooltipTrigger>
           <TooltipContent>Model manager</TooltipContent>
         </Tooltip>

@@ -40,10 +40,10 @@ pub async fn generate(
         .unwrap_or_else(|| "logits".to_string());
 
     // Find past key value inputs/outputs for KV cache
-    let past_key_names: Vec<&String> = input_names.iter()
+    let _past_key_names: Vec<&String> = input_names.iter()
         .filter(|n: &&String| n.contains("past_key") || n.contains("past"))
         .collect();
-    let present_key_names: Vec<&String> = output_names.iter()
+    let _present_key_names: Vec<&String> = output_names.iter()
         .filter(|n: &&String| n.contains("present_key") || n.contains("present"))
         .collect();
 

@@ -22,7 +22,6 @@ export function useAi() {
     isGenerating,
     setLoadedModel,
     setIsGenerating,
-    addChatMessage,
     setStreamingToken,
     chatMessages,
   } = useStore()
@@ -39,7 +38,7 @@ export function useAi() {
         const current = state.streamingToken
         const content = current || token
         if (content) {
-          state.addChatMessage({ role: "assistant", content })
+          state.addChatMessage({ id: crypto.randomUUID(), role: "assistant", content })
         }
         state.setStreamingToken("")
         state.setIsGenerating(false)
@@ -65,23 +64,29 @@ export function useAi() {
   }
 
   async function generate(prompt: string, context?: string, maxTokens?: number, temperature?: number) {
+    const state = useStore.getState()
+    const { loadedModel, activeSessionId, chatMessages: currentMessages } = state
     if (!loadedModel) throw new Error("No model loaded")
+    if (!activeSessionId) throw new Error("No active session")
+
+    const systemPrompt = "You are a helpful AI assistant analyzing a PDF document. Always format your responses in clear, professional Markdown. Use headings, lists, and bold text where appropriate to make your answers easy to read."
 
     const promptForModel = context
       ? `Use this selected PDF context to answer the user's question.\n\nSelected context:\n${context}\n\nUser question:\n${prompt}`
       : prompt
 
-    addChatMessage({ role: "user", content: prompt })
     setIsGenerating(true)
     setStreamingToken("")
 
     if (loadedModel.source === "cloud") {
       const messages: ChatMessage[] = [
-        ...chatMessages,
+        { id: "system", role: "system", content: systemPrompt },
+        ...currentMessages.map(m => ({ role: m.role, content: m.content })),
         { role: "user", content: promptForModel },
       ]
 
       await invoke("generate_cloud", {
+        sessionId: activeSessionId,
         baseUrl: loadedModel.baseUrl,
         apiKey: loadedModel.apiKey,
         model: loadedModel.modelName,
@@ -90,7 +95,12 @@ export function useAi() {
         temperature,
       })
     } else {
-      await invoke("generate", { prompt: promptForModel, maxTokens, temperature })
+      await invoke("generate", { 
+        sessionId: activeSessionId,
+        prompt: promptForModel, 
+        maxTokens, 
+        temperature 
+      })
     }
   }
 
