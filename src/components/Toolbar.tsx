@@ -3,13 +3,14 @@ import {
   ChevronLeft,
   ChevronRight,
   FileText,
-  FolderOpen,
   MessageSquare,
   PanelLeft,
   Settings2,
   ZoomIn,
   ZoomOut,
   RotateCcw,
+  Home,
+  FolderPlus,
 } from "lucide-react"
 import { usePdf } from "../hooks/usePdf"
 import { useStore } from "../store"
@@ -34,26 +35,13 @@ export function Toolbar() {
     chatOpen,
     setChatOpen,
     setModelManagerOpen,
+    workspaces,
+    activeWorkspaceId,
+    upgradeWorkspace,
   } = useStore()
 
-  async function handleOpen() {
-    try {
-      const path = await open({
-        multiple: false,
-        filters: [{ name: "PDF", extensions: ["pdf"] }],
-      })
-      if (path) {
-        console.log("[Toolbar] opening PDF at path:", path)
-        await openPdf(path)
-        console.log("[Toolbar] openPdf completed")
-      } else {
-        console.log("[Toolbar] no path selected")
-      }
-    } catch (e) {
-      console.error("Failed to open PDF:", e)
-      alert("Failed to open PDF: " + e)
-    }
-  }
+  const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId)
+  const isQuickRead = activeWorkspace?.type === "quick_read"
 
   function handleZoomIn() {
     setZoom(Math.min(zoom + 0.25, 4))
@@ -69,16 +57,39 @@ export function Toolbar() {
 
   return (
     <TooltipProvider delayDuration={300}>
-      <div className="flex h-11 items-center gap-1 border-b px-2">
-        {/* Open file */}
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button variant="ghost" size="icon" onClick={handleOpen}>
-              <FolderOpen className="h-4 w-4" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>Open PDF</TooltipContent>
-        </Tooltip>
+      <div className="flex h-11 items-center gap-1 border-b px-2 bg-white">
+        <div className="flex items-center gap-2 mr-2">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="h-8 w-8"
+                onClick={() => useStore.setState({ activeWorkspaceId: null, pdfInfo: null })}
+              >
+                <Home className="h-4 w-4 text-gray-600" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Back to Dashboard</TooltipContent>
+          </Tooltip>
+          
+          {activeWorkspace && (
+            <div className="flex items-center gap-2 text-sm font-medium text-gray-400 select-none">
+              <span>/</span>
+              <span className="text-gray-900 truncate max-w-[150px]">{activeWorkspace.name}</span>
+            </div>
+          )}
+        </div>
+
+        {isQuickRead && activeWorkspaceId && (
+          <button
+            onClick={() => upgradeWorkspace(activeWorkspaceId)}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-md shadow-sm hover:bg-gray-50 hover:text-gray-900 transition-colors ml-2 mr-1 group"
+          >
+            <FolderPlus className="h-3.5 w-3.5 text-gray-400 group-hover:text-gray-600" />
+            <span>Convert to Workspace</span>
+          </button>
+        )}
 
         <div className="mx-1 h-5 w-px bg-border" />
 

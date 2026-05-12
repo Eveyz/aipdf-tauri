@@ -60,8 +60,25 @@ export interface CloudModelEntry {
   modelName: string
 }
 
+export interface Workspace {
+  id: string
+  name: string
+  type: "standard" | "quick_read"
+  createdAt: number
+  updatedAt: number
+}
+
+export interface Document {
+  id: string
+  workspaceId: string
+  path: string
+  name: string
+  createdAt: number
+}
+
 export interface ChatSession {
   id: string
+  workspaceId: string
   name: string
   messages: ChatMessage[]
   createdAt: number
@@ -87,6 +104,11 @@ function writeCloudModels(models: CloudModelEntry[]) {
 }
 
 interface AppState {
+  // Workspaces
+  workspaces: Workspace[]
+  activeWorkspaceId: string | null
+  documents: Document[]
+
   // PDF
   pdfInfo: PdfInfo | null
   currentPage: number
@@ -116,6 +138,11 @@ interface AppState {
 
   // Actions
   init: () => Promise<void>
+  createWorkspace: (name: string, type?: "standard" | "quick_read") => Promise<string>
+  switchWorkspace: (id: string) => Promise<void>
+  deleteWorkspace: (id: string) => Promise<void>
+  upgradeWorkspace: (id: string) => Promise<void>
+  addDocument: (path: string) => Promise<void>
   setPdfInfo: (info: PdfInfo | null) => void
   setLastPdfPath: (path: string | null) => void
   setCurrentPage: (page: number) => void
@@ -149,6 +176,11 @@ interface AppState {
 import { invoke } from "@tauri-apps/api/core"
 
 export const useStore = create<AppState>((set, get) => ({
+  // Workspaces
+  workspaces: [],
+  activeWorkspaceId: null,
+  documents: [],
+
   // PDF
   pdfInfo: null,
   currentPage: 0,
@@ -179,24 +211,160 @@ export const useStore = create<AppState>((set, get) => ({
   // Actions
   init: async () => {
     try {
-      const sessions = await invoke<any[]>("list_sessions", { limit: 3 })
-      const mappedSessions: ChatSession[] = sessions.map(s => ({
-        id: s.id,
-        name: s.name,
-        messages: [],
-        createdAt: s.created_at,
-        updatedAt: s.updated_at
-      }))
+      const workspaces = await invoke<any[]>("list_workspaces", { limit: 20 })
+      const mappedWorkspaces: Workspace[] = workspaces.map(w => {
+        let type: "standard" | "quick_read" = "standard"
+        if (w.metadata) {
+          try {
+            const meta = JSON.parse(w.metadata)
+            if (meta.type === "quick_read" || meta.type === "standard") {
+              type = meta.type
+            }
+          } catch (e) {
+            console.warn("Failed to parse workspace metadata:", e)
+          }
+        }
+        return {
+          id: w.id,
+          name: w.name,
+          type,
+          createdAt: w.created_at,
+          updatedAt: w.updated_at
+        }
+      })
       
       const lastPdf = await invoke<string | null>("get_setting", { key: "last_pdf_path" })
+      const lastWsId = await invoke<string | null>("get_setting", { key: "active_workspace_id" })
+      const lastModelId = await invoke<string | null>("get_setting", { key: "last_used_model_id" })
       
-      set({ sessions: mappedSessions, lastPdfPath: lastPdf })
-      
-      set({ activeSessionId: null, chatMessages: [] })
+      set({ workspaces: mappedWorkspaces, lastPdfPath: lastPdf })
+
+      if (lastWsId && mappedWorkspaces.some(w => w.id === lastWsId)) {
+        await get().switchWorkspace(lastWsId)
+      }
+
+      if (lastModelId) {
+        if (lastModelId.startsWith("cloud:")) {
+          const cloudModel = get().cloudModels.find(m => `cloud:${m.id}` === lastModelId)
+          if (cloudModel) {
+            set({ loadedModel: {
+              id: `cloud:${cloudModel.id}`,
+              name: cloudModel.name,
+              modelType: `${cloudModel.vendor} - ${cloudModel.modelName}`,
+              hasTokenizer: false,
+              path: cloudModel.baseUrl,
+              source: "cloud",
+              baseUrl: cloudModel.baseUrl,
+              apiKey: cloudModel.apiKey,
+              modelName: cloudModel.modelName,
+            }})
+          }
+        } else {
+          try {
+            const info = await invoke<any>("load_model", { modelId: lastModelId })
+            set({ loadedModel: { ...info, source: "local" } })
+          } catch (e) {
+            console.error("Failed to auto-load last model:", e)
+          }
+        }
+      }
     } catch (e) {
       console.error("Failed to init store:", e)
     }
   },
+
+  createWorkspace: async (name, type = "standard") => {
+    const ws = await invoke<any>("create_workspace", { 
+      name,
+      metadata: JSON.stringify({ type })
+    })
+    const newWs: Workspace = {
+      id: ws.id,
+      name: ws.name,
+      type: type,
+      createdAt: ws.created_at,
+      updatedAt: ws.updated_at
+    }
+    set(state => ({ workspaces: [newWs, ...state.workspaces] }))
+    return newWs.id
+  },
+
+  switchWorkspace: async (id) => {
+    const docs = await invoke<any[]>("get_documents", { workspaceId: id })
+    const sessions = await invoke<any[]>("list_sessions", { workspaceId: id })
+    
+    invoke("set_setting", { key: "active_workspace_id", value: id }).catch(console.error)
+
+    set({
+      activeWorkspaceId: id,
+      documents: docs.map(d => ({
+        id: d.id,
+        workspaceId: d.workspace_id,
+        path: d.path,
+        name: d.name,
+        createdAt: d.created_at
+      })),
+      sessions: sessions.map(s => ({
+        id: s.id,
+        workspaceId: s.workspace_id,
+        name: s.name,
+        messages: [],
+        createdAt: s.created_at,
+        updatedAt: s.updated_at
+      })),
+      activeSessionId: sessions[0]?.id || null,
+      chatMessages: [], 
+      pdfInfo: null, 
+    })
+
+    if (sessions[0]) {
+      get().switchSession(sessions[0].id)
+    }
+  },
+
+  deleteWorkspace: async (id) => {
+    await invoke("delete_workspace", { id })
+    set(state => ({
+      workspaces: state.workspaces.filter(w => w.id !== id),
+      activeWorkspaceId: state.activeWorkspaceId === id ? null : state.activeWorkspaceId
+    }))
+  },
+
+  upgradeWorkspace: async (id) => {
+    // In a real app, we'd call a backend command to update metadata.
+    // Let's assume update_workspace_metadata exists or just handle it locally if it fails.
+    try {
+      await invoke("update_workspace_metadata", { 
+        id, 
+        metadata: JSON.stringify({ type: "standard" }) 
+      })
+    } catch (e) {
+      console.warn("Failed to update workspace metadata on backend:", e)
+    }
+    
+    set(state => ({
+      workspaces: state.workspaces.map(w => 
+        w.id === id ? { ...w, type: "standard" } : w
+      )
+    }))
+  },
+
+  addDocument: async (path) => {
+    const wsId = get().activeWorkspaceId
+    if (!wsId) return
+
+    const name = path.split("/").pop() || "Unknown"
+    const doc = await invoke<any>("add_document", { workspaceId: wsId, path, name })
+    const newDoc: Document = {
+      id: doc.id,
+      workspaceId: doc.workspace_id,
+      path: doc.path,
+      name: doc.name,
+      createdAt: doc.created_at
+    }
+    set(state => ({ documents: [...state.documents, newDoc] }))
+  },
+
   setPdfInfo: (info) => set({ pdfInfo: info, currentPage: 0, renderedPages: {} }),
   setLastPdfPath: (path) => {
     set({ lastPdfPath: path })
@@ -212,7 +380,12 @@ export const useStore = create<AppState>((set, get) => ({
       renderedPageDims: { ...state.renderedPageDims, [page]: { width, height } },
     })),
   setZoom: (zoom) => set({ zoom, renderedPages: {}, renderedPageDims: {} }),
-  setLoadedModel: (model) => set({ loadedModel: model }),
+  setLoadedModel: (model) => {
+    set({ loadedModel: model })
+    if (model) {
+      invoke("set_setting", { key: "last_used_model_id", value: model.id }).catch(console.error)
+    }
+  },
   setIsGenerating: (generating) => set({ isGenerating: generating }),
   addChatMessage: (message) =>
     set((state) => {
@@ -245,9 +418,6 @@ export const useStore = create<AppState>((set, get) => ({
       return { chatMessages: messages }
     }),
   clearChat: () => {
-    // Note: We don't have a backend "clear" yet, but we can just delete messages for this session
-    // For now, let's keep it simple and just clear locally (UI will reflect)
-    // In a real app, we'd add a "delete_messages" command.
     set({ chatMessages: [], streamingToken: "" })
   },
   setStreamingToken: (token) => set({ streamingToken: token }),
@@ -284,11 +454,18 @@ export const useStore = create<AppState>((set, get) => ({
       }
     }),
   createSession: async () => {
+    const wsId = get().activeWorkspaceId
+    if (!wsId) {
+      console.warn("[Store] Cannot create session: No active workspace")
+      return null
+    }
+
     try {
       const name = `Chat ${get().sessions.length + 1}`
-      const session = await invoke<any>("create_session", { name })
+      const session = await invoke<any>("create_session", { workspaceId: wsId, name })
       const newSession: ChatSession = {
         id: session.id,
+        workspaceId: session.workspace_id,
         name: session.name,
         messages: [],
         createdAt: session.created_at,
@@ -301,8 +478,10 @@ export const useStore = create<AppState>((set, get) => ({
         streamingToken: "",
         showSessions: false,
       }))
+      return newSession.id
     } catch (e) {
-      console.error("Failed to create session:", e)
+      console.error("[Store] Failed to create session:", e)
+      return null
     }
   },
   switchSession: async (id) => {

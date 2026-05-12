@@ -22,12 +22,6 @@ const TABS: { id: SidebarTab; label: string; icon: typeof FileText }[] = [
   { id: "notes", label: "Notes", icon: StickyNote },
 ]
 
-// Mock files data
-const MOCK_FILES = [
-  { id: "1", name: "deep_learning.pdf", active: true },
-  { id: "2", name: "nvidia_slm.pdf", active: false },
-]
-
 // Mock outline data
 const MOCK_OUTLINE = [
   { level: 1, title: "Preface", page: 1 },
@@ -229,42 +223,72 @@ function NotesTab() {
   )
 }
 
+import { open } from "@tauri-apps/plugin-dialog"
+
 export function DocumentSidebar() {
   const [activeTab, setActiveTab] = useState<SidebarTab>("outline")
-  const { pdfInfo } = useStore()
+  const { pdfInfo, documents, workspaces, activeWorkspaceId, addDocument } = useStore()
+  const { openPdf } = usePdf()
 
-  if (!pdfInfo) return null
+  async function handleAddFile() {
+    try {
+      const path = await open({
+        multiple: false,
+        filters: [{ name: "PDF", extensions: ["pdf"] }],
+      })
+      if (path && typeof path === 'string') {
+        await addDocument(path)
+        await openPdf(path)
+      }
+    } catch (e) {
+      console.error("Failed to add file:", e)
+    }
+  }
+
+  if (!activeWorkspaceId && !pdfInfo) return null
+
+  const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId)
+  const isQuickRead = activeWorkspace?.type === "quick_read"
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col bg-white">
       {/* Top Section: FILES (Workspace) */}
-      <div className="flex flex-col h-1/3 min-h-[200px] border-b border-gray-200">
-        <div className="shrink-0 px-4 py-3 text-[11px] font-semibold text-gray-400 uppercase tracking-wider flex justify-between items-center">
-          <span>Files</span>
-          <button className="hover:text-gray-600 transition-colors">
-            <Plus className="h-3 w-3" />
-          </button>
-        </div>
-
-        <ScrollArea className="scrollbar-thin flex-1">
-          <div className="flex flex-col gap-0.5 px-2 pb-2">
-            {MOCK_FILES.map((file) => (
-              <div
-                key={file.id}
-                className={cn(
-                  "mx-2 px-2 py-1.5 flex items-center gap-2 text-sm rounded-md cursor-pointer transition-colors group",
-                  file.active
-                    ? "bg-gray-100 text-gray-900 font-medium"
-                    : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
-                )}
-              >
-                <File className="h-3.5 w-3.5 shrink-0 opacity-70" />
-                <span className="truncate">{file.name}</span>
-              </div>
-            ))}
+      {!isQuickRead && (
+        <div className="flex flex-col h-1/3 min-h-[200px] border-b border-gray-200">
+          <div className="shrink-0 px-4 py-3 text-[11px] font-semibold text-gray-400 uppercase tracking-wider flex justify-between items-center">
+            <span>Files</span>
+            <button 
+              onClick={handleAddFile}
+              className="hover:text-gray-600 transition-colors"
+            >
+              <Plus className="h-3 w-3" />
+            </button>
           </div>
-        </ScrollArea>
-      </div>
+
+          <ScrollArea className="scrollbar-thin flex-1">
+            <div className="flex flex-col gap-0.5 px-2 pb-2">
+              {documents.map((file) => {
+                const isActive = pdfInfo?.fileName === file.name
+                return (
+                  <div
+                    key={file.id}
+                    onClick={() => !isActive && openPdf(file.path)}
+                    className={cn(
+                      "mx-2 px-2 py-1.5 flex items-center gap-2 text-sm rounded-md cursor-pointer transition-colors group",
+                      isActive
+                        ? "bg-gray-100 text-gray-900 font-medium"
+                        : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+                    )}
+                  >
+                    <File className="h-3.5 w-3.5 shrink-0 opacity-70" />
+                    <span className="truncate">{file.name}</span>
+                  </div>
+                )
+              })}
+            </div>
+          </ScrollArea>
+        </div>
+      )}
 
       {/* Bottom Section: ACTIVE DOCUMENT */}
       <div className="flex-1 flex flex-col overflow-hidden">
@@ -272,32 +296,42 @@ export function DocumentSidebar() {
           Active Document
         </div>
 
-        <div className="shrink-0">
-          <div className="flex items-center gap-4 px-4 pt-2 pb-0">
-            {TABS.map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={cn(
-                  "flex items-center gap-1.5 pb-2.5 transition-colors text-xs border-b-2",
-                  activeTab === tab.id
-                    ? "text-gray-900 font-medium border-gray-900"
-                    : "text-gray-400 hover:text-gray-600 font-normal border-transparent"
-                )}
-              >
-                <tab.icon className="h-3.5 w-3.5" />
-                {tab.label}
-              </button>
-            ))}
+        {!pdfInfo ? (
+          <div className="flex-1 flex items-center justify-center p-8 text-center">
+            <p className="text-xs text-gray-400 italic leading-relaxed">
+              No document selected. {isQuickRead ? "Please wait for PDF to load." : "Select a file from above to view its details."}
+            </p>
           </div>
-          <div className="h-px bg-gray-100 mx-4" />
-        </div>
+        ) : (
+          <>
+            <div className="shrink-0">
+              <div className="flex items-center gap-4 px-4 pt-2 pb-0">
+                {TABS.map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    className={cn(
+                      "flex items-center gap-1.5 pb-2.5 transition-colors text-xs border-b-2",
+                      activeTab === tab.id
+                        ? "text-gray-900 font-medium border-gray-900"
+                        : "text-gray-400 hover:text-gray-600 font-normal border-transparent"
+                    )}
+                  >
+                    <tab.icon className="h-3.5 w-3.5" />
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+              <div className="h-px bg-gray-100 mx-4" />
+            </div>
 
-        <ScrollArea className="scrollbar-thin min-h-0 flex-1">
-          {activeTab === "outline" && <OutlineTab />}
-          {activeTab === "extraction" && <ExtractionTab />}
-          {activeTab === "notes" && <NotesTab />}
-        </ScrollArea>
+            <ScrollArea className="scrollbar-thin min-h-0 flex-1">
+              {activeTab === "outline" && <OutlineTab />}
+              {activeTab === "extraction" && <ExtractionTab />}
+              {activeTab === "notes" && <NotesTab />}
+            </ScrollArea>
+          </>
+        )}
       </div>
     </div>
   )

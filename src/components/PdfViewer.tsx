@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react"
-import { Plus, X } from "lucide-react"
+import { open } from "@tauri-apps/plugin-dialog"
+import { Plus, X, FilePlus } from "lucide-react"
 import { usePdf, type PageTextResult } from "../hooks/usePdf"
 import { useStore } from "../store"
 import { cn } from "../lib/utils"
+import { Button } from "./ui/button"
 
 const CSS_PIXELS_PER_PDF_POINT = 96 / 72
 const MAX_RENDER_SCALE = 5
@@ -90,22 +92,38 @@ function buildTextLines(pageText: PageTextResult | undefined): TextLine[] {
     .sort((a, b) => a.top - b.top || a.left - b.left)
 }
 
-// Mock document tabs
-const MOCK_TABS = [
-  { id: "1", name: "deep_learning.pdf", active: true },
-  { id: "2", name: "nvidia_slm.pdf", active: false },
-]
-
 export function PdfViewer() {
-  const { renderPage, getPageText } = usePdf()
+  const { renderPage, getPageText, openPdf } = usePdf()
   const {
     pdfInfo,
     currentPage,
     renderedPages,
     zoom,
     addChatContext,
+    documents,
+    addDocument,
+    workspaces,
+    activeWorkspaceId,
   } = useStore()
   const [pageTexts, setPageTexts] = useState<Record<number, PageTextResult>>({})
+
+  const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId)
+  const isQuickRead = activeWorkspace?.type === "quick_read"
+
+  async function handleAddFile() {
+    try {
+      const path = await open({
+        multiple: false,
+        filters: [{ name: "PDF", extensions: ["pdf"] }],
+      })
+      if (path && typeof path === 'string') {
+        await addDocument(path)
+        await openPdf(path)
+      }
+    } catch (e) {
+      console.error("Failed to add file:", e)
+    }
+  }
 
   const displayWidth = pdfInfo
     ? Math.round(pdfInfo.pageWidth * CSS_PIXELS_PER_PDF_POINT * zoom)
@@ -148,10 +166,6 @@ export function PdfViewer() {
   const pageText = pageTexts[currentPage]
   const textLines = useMemo(() => buildTextLines(pageText), [pageText])
 
-  if (!pdfInfo) return null
-
-  const imageData = renderedPages[currentPage]
-
   function captureSelectionContext() {
     const selectedText = window.getSelection()?.toString().trim() ?? ""
     if (selectedText) {
@@ -165,35 +179,86 @@ export function PdfViewer() {
   }
 
   function handleAddPage() {
+    if (!pdfInfo) return
     addChatContext({
       type: "page",
       content: `Page ${currentPage + 1}`,
-      label: `p.${currentPage + 1} (${pdfInfo!.fileName.replace(".pdf", "").slice(0, 15)}...)`,
+      label: `p.${currentPage + 1} (${pdfInfo.fileName.replace(".pdf", "").slice(0, 15)}...)`,
       id: `page-${currentPage}`,
     })
   }
 
+  if (documents.length === 0 && !pdfInfo) {
+    return (
+      <div className="flex h-full items-center justify-center bg-[#F9F9FB] text-gray-500">
+        <div className="text-center">
+          <p className="mb-4">No documents in this workspace</p>
+          <button 
+            onClick={handleAddFile} 
+            className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-lg text-sm hover:bg-black transition-colors shadow-sm"
+          >
+            <FilePlus className="h-4 w-4" />
+            Add PDF to Workspace
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  if (!pdfInfo && documents.length > 0) {
+    return (
+      <div className="flex h-full items-center justify-center bg-[#F9F9FB] text-gray-500">
+        <div className="text-center">
+          <p className="mb-4">Select a document to read</p>
+          <div className="flex flex-wrap gap-2 justify-center mt-4">
+            {documents.map(doc => (
+              <button
+                key={doc.id}
+                onClick={() => openPdf(doc.path)}
+                className="px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm hover:border-gray-300 shadow-sm transition-all text-gray-800 font-medium"
+              >
+                {doc.name}
+              </button>
+            ))}
+            <button 
+              onClick={handleAddFile}
+              className="px-4 py-2 bg-gray-900 text-white rounded-lg text-sm hover:bg-black transition-all shadow-sm flex items-center gap-2"
+            >
+              <Plus className="h-4 w-4" />
+              Add New
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  const imageData = renderedPages[currentPage]
+
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col bg-[#F9F9FB]">
       {/* Document Tabs */}
-      <div className="flex shrink-0 items-end px-2 pt-2 bg-[#F9F9FB] border-b border-gray-200 overflow-x-auto">
-        {MOCK_TABS.map((tab) => (
-          <div
-            key={tab.id}
-            className={cn(
-              "group flex items-center gap-2 px-3 py-1.5 text-sm transition-colors rounded-t-lg relative",
-              tab.active
-                ? "bg-white border-t border-x border-gray-200 text-gray-800 font-medium z-10 -mb-[1px]"
-                : "text-gray-500 hover:text-gray-700 hover:bg-gray-100/50 border-t border-x border-transparent cursor-pointer"
-            )}
-          >
-            <span className="truncate max-w-[160px]">{tab.name}</span>
-            <button className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-gray-200 transition-all">
-              <X className="h-3 w-3" />
-            </button>
-          </div>
-        ))}
-      </div>
+      {!isQuickRead && (
+        <div className="flex shrink-0 items-end px-2 pt-2 bg-[#F9F9FB] border-b border-gray-200 overflow-x-auto">
+          {documents.map((doc) => {
+            const isActive = pdfInfo?.fileName === doc.name
+            return (
+              <div
+                key={doc.id}
+                onClick={() => !isActive && openPdf(doc.path)}
+                className={cn(
+                  "group flex items-center gap-2 px-3 py-1.5 text-sm transition-colors rounded-t-lg relative",
+                  isActive
+                    ? "bg-white border-t border-x border-gray-200 text-gray-800 font-medium z-10 -mb-[1px]"
+                    : "text-gray-500 hover:text-gray-700 hover:bg-gray-100/50 border-t border-x border-transparent cursor-pointer"
+                )}
+              >
+                <span className="truncate max-w-[160px]">{doc.name}</span>
+              </div>
+            )
+          })}
+        </div>
+      )}
 
       {/* Main Canvas */}
       <div className="min-h-0 flex-1 overflow-auto p-4 scrollbar-thin">

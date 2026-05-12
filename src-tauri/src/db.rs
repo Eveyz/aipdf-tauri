@@ -5,9 +5,28 @@ use uuid::Uuid;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DbWorkspace {
+    pub id: String,
+    pub name: String,
+    pub metadata: Option<String>,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DbDocument {
+    pub id: String,
+    pub workspace_id: String,
+    pub path: String,
+    pub name: String,
+    pub created_at: i64,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DbSession {
     pub id: String,
+    pub workspace_id: String,
     pub name: String,
     pub created_at: i64,
     pub updated_at: i64,
@@ -21,12 +40,6 @@ pub struct DbMessage {
     pub content: String,
     pub contexts: Option<String>, // JSON string of ChatContext[]
     pub created_at: i64,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct DbModelSettings {
-    pub last_used_model_id: Option<String>,
-    pub last_pdf_path: Option<String>,
 }
 
 pub struct DbManager {
@@ -46,12 +59,77 @@ impl DbManager {
     fn init(&self) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         
+        // Migration: Check if workspaces table has metadata
+        let workspaces_needs_migration = {
+            let mut stmt = conn.prepare("PRAGMA table_info(workspaces)")?;
+            let mut rows = stmt.query([])?;
+            let mut has_metadata = false;
+            while let Some(row) = rows.next()? {
+                let name: String = row.get(1)?;
+                if name == "metadata" {
+                    has_metadata = true;
+                }
+            }
+            !has_metadata
+        };
+
+        if workspaces_needs_migration {
+            println!("[DB] Migrating workspaces table: adding metadata column");
+            let _ = conn.execute("ALTER TABLE workspaces ADD COLUMN metadata TEXT", []);
+        }
+
+        // Migration: Check if sessions table exists and has workspace_id
+        let needs_migration = {
+            let mut stmt = conn.prepare("PRAGMA table_info(sessions)")?;
+            let mut rows = stmt.query([])?;
+            let mut has_workspace_id = false;
+            let mut table_exists = false;
+            while let Some(row) = rows.next()? {
+                table_exists = true;
+                let name: String = row.get(1)?;
+                if name == "workspace_id" {
+                    has_workspace_id = true;
+                }
+            }
+            table_exists && !has_workspace_id
+        };
+
+        if needs_migration {
+            println!("[DB] Migrating database: dropping old sessions and messages tables");
+            conn.execute("DROP TABLE IF EXISTS messages", [])?;
+            conn.execute("DROP TABLE IF EXISTS sessions", [])?;
+        }
+
         conn.execute(
-            "CREATE TABLE IF NOT EXISTS sessions (
+            "CREATE TABLE IF NOT EXISTS workspaces (
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
                 created_at INTEGER NOT NULL,
                 updated_at INTEGER NOT NULL
+            )",
+            [],
+        )?;
+
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS documents (
+                id TEXT PRIMARY KEY,
+                workspace_id TEXT NOT NULL,
+                path TEXT NOT NULL,
+                name TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                FOREIGN KEY(workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
+            )",
+            [],
+        )?;
+
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS sessions (
+                id TEXT PRIMARY KEY,
+                workspace_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                FOREIGN KEY(workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
             )",
             [],
         )?;
@@ -80,39 +158,148 @@ impl DbManager {
         Ok(())
     }
 
-    pub fn create_session(&self, name: &str) -> Result<DbSession> {
+    // Workspace methods
+    pub fn create_workspace(&self, name: &str, metadata: Option<&str>) -> Result<DbWorkspace> {
         let conn = self.conn.lock().unwrap();
         let id = Uuid::new_v4().to_string();
         let now = Utc::now().timestamp_millis();
         
         conn.execute(
-            "INSERT INTO sessions (id, name, created_at, updated_at) VALUES (?1, ?2, ?3, ?4)",
-            params![id, name, now, now],
+            "INSERT INTO workspaces (id, name, metadata, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![id, name, metadata, now, now],
+        )?;
+
+        Ok(DbWorkspace {
+            id,
+            name: name.to_string(),
+            metadata: metadata.map(|s| s.to_string()),
+            created_at: now,
+            updated_at: now,
+        })
+    }
+
+    pub fn list_workspaces(&self, limit: Option<i32>) -> Result<Vec<DbWorkspace>> {
+        let conn = self.conn.lock().unwrap();
+        let query = if let Some(l) = limit {
+            format!("SELECT id, name, metadata, created_at, updated_at FROM workspaces ORDER BY updated_at DESC LIMIT {}", l)
+        } else {
+            "SELECT id, name, metadata, created_at, updated_at FROM workspaces ORDER BY updated_at DESC".to_string()
+        };
+        
+        let mut stmt = conn.prepare(&query)?;
+        let rows = stmt.query_map([], |row| {
+            Ok(DbWorkspace {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                metadata: row.get(2)?,
+                created_at: row.get(3)?,
+                updated_at: row.get(4)?,
+            })
+        })?;
+
+        let mut workspaces = Vec::new();
+        for row in rows {
+            workspaces.push(row?);
+        }
+        Ok(workspaces)
+    }
+
+    pub fn delete_workspace(&self, id: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM workspaces WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    pub fn update_workspace_metadata(&self, id: &str, metadata: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let now = Utc::now().timestamp_millis();
+        conn.execute(
+            "UPDATE workspaces SET metadata = ?1, updated_at = ?2 WHERE id = ?3",
+            params![metadata, now, id],
+        )?;
+        Ok(())
+    }
+
+    pub fn update_workspace_time(&self, id: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let now = Utc::now().timestamp_millis();
+        conn.execute(
+            "UPDATE workspaces SET updated_at = ?1 WHERE id = ?2",
+            params![now, id],
+        )?;
+        Ok(())
+    }
+
+    // Document methods
+    pub fn add_document(&self, workspace_id: &str, path: &str, name: &str) -> Result<DbDocument> {
+        let conn = self.conn.lock().unwrap();
+        let id = Uuid::new_v4().to_string();
+        let now = Utc::now().timestamp_millis();
+
+        conn.execute(
+            "INSERT INTO documents (id, workspace_id, path, name, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![id, workspace_id, path, name, now],
+        )?;
+
+        Ok(DbDocument {
+            id,
+            workspace_id: workspace_id.to_string(),
+            path: path.to_string(),
+            name: name.to_string(),
+            created_at: now,
+        })
+    }
+
+    pub fn get_documents(&self, workspace_id: &str) -> Result<Vec<DbDocument>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT id, workspace_id, path, name, created_at FROM documents WHERE workspace_id = ?1")?;
+        let rows = stmt.query_map(params![workspace_id], |row| {
+            Ok(DbDocument {
+                id: row.get(0)?,
+                workspace_id: row.get(1)?,
+                path: row.get(2)?,
+                name: row.get(3)?,
+                created_at: row.get(4)?,
+            })
+        })?;
+
+        let mut docs = Vec::new();
+        for row in rows {
+            docs.push(row?);
+        }
+        Ok(docs)
+    }
+
+    // Session methods
+    pub fn create_session(&self, workspace_id: &str, name: &str) -> Result<DbSession> {
+        let conn = self.conn.lock().unwrap();
+        let id = Uuid::new_v4().to_string();
+        let now = Utc::now().timestamp_millis();
+        
+        conn.execute(
+            "INSERT INTO sessions (id, workspace_id, name, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![id, workspace_id, name, now, now],
         )?;
 
         Ok(DbSession {
             id,
+            workspace_id: workspace_id.to_string(),
             name: name.to_string(),
             created_at: now,
             updated_at: now,
         })
     }
 
-    pub fn list_sessions(&self, limit: Option<i32>) -> Result<Vec<DbSession>> {
+    pub fn get_sessions(&self, workspace_id: &str) -> Result<Vec<DbSession>> {
         let conn = self.conn.lock().unwrap();
-        let query = if let Some(l) = limit {
-            format!("SELECT id, name, created_at, updated_at FROM sessions ORDER BY updated_at DESC LIMIT {}", l)
-        } else {
-            "SELECT id, name, created_at, updated_at FROM sessions ORDER BY updated_at DESC".to_string()
-        };
-        
-        let mut stmt = conn.prepare(&query)?;
-        let rows = stmt.query_map([], |row| {
+        let mut stmt = conn.prepare("SELECT id, workspace_id, name, created_at, updated_at FROM sessions WHERE workspace_id = ?1 ORDER BY updated_at DESC")?;
+        let rows = stmt.query_map(params![workspace_id], |row| {
             Ok(DbSession {
                 id: row.get(0)?,
-                name: row.get(1)?,
-                created_at: row.get(2)?,
-                updated_at: row.get(3)?,
+                workspace_id: row.get(1)?,
+                name: row.get(2)?,
+                created_at: row.get(3)?,
+                updated_at: row.get(4)?,
             })
         })?;
 

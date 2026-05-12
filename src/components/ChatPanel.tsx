@@ -180,13 +180,11 @@ export function ChatPanel() {
     try {
       let currentSessionId = activeSessionId
       if (!currentSessionId) {
-        await createSession()
-        // Wait for state to update or get it from store
-        currentSessionId = useStore.getState().activeSessionId
+        currentSessionId = await createSession()
       }
 
       if (!currentSessionId) {
-        throw new Error("Failed to create or active a session")
+        throw new Error("Failed to create or activate a session. Please ensure a workspace is active.")
       }
 
       setInput("")
@@ -302,17 +300,17 @@ export function ChatPanel() {
 
       {/* Sessions list */}
       {showSessions && (
-        <div className="shrink-0 border-b">
-          <ScrollArea className="max-h-40">
+        <div className="shrink-0 border-b bg-gray-50/30">
+          <ScrollArea className="max-h-[114px]">
             <div className="py-1">
               {sessions.length === 0 ? (
-                <p className="px-3 py-2 text-xs font-normal text-muted-foreground">No sessions yet</p>
+                <p className="px-3 py-2 text-xs font-normal text-muted-foreground italic">No sessions in this workspace</p>
               ) : (
                 sessions.map((session) => (
                   <div
                     key={session.id}
                     className={`group relative flex items-center gap-2 px-3 py-2 text-xs cursor-pointer border border-transparent transition-all rounded-md mx-1 overflow-hidden hover:bg-gray-100 ${
-                      session.id === activeSessionId ? "font-medium" : "font-normal text-gray-600 hover:text-gray-900"
+                      session.id === activeSessionId ? "bg-white shadow-sm ring-1 ring-black/5 font-medium" : "font-normal text-gray-600 hover:text-gray-900"
                     }`}
                     onClick={() => switchSession(session.id)}
                   >
@@ -342,9 +340,9 @@ export function ChatPanel() {
                       )}
                     </div>
                     
-                    <div className={`absolute right-2 flex items-center gap-1 pl-2 transition-opacity duration-200 bg-gray-100 ${editingSessionId === session.id ? "opacity-0" : "opacity-0 group-hover:opacity-100 focus-within:opacity-100"}`}>
+                    <div className={`absolute right-1.5 flex items-center gap-0.5 pl-2 transition-opacity duration-200 ${session.id === activeSessionId ? "bg-white" : "bg-gray-100"} ${editingSessionId === session.id ? "opacity-0" : "opacity-0 group-hover:opacity-100 focus-within:opacity-100"}`}>
                       <button
-                        className="h-5 w-5 flex items-center justify-center rounded hover:bg-white hover:shadow-sm text-gray-400 hover:text-gray-900 transition-all"
+                        className="h-6 w-6 flex items-center justify-center rounded hover:bg-white hover:shadow-sm text-gray-400 hover:text-gray-900 transition-all"
                         onClick={(e) => {
                           e.stopPropagation()
                           handleStartRename(session.id, session.name)
@@ -354,14 +352,16 @@ export function ChatPanel() {
                         <Pencil className="h-3 w-3" />
                       </button>
                       <button
-                        className="h-5 w-5 flex items-center justify-center rounded hover:bg-white hover:shadow-sm text-gray-400 hover:text-destructive transition-all"
+                        className="h-6 w-6 flex items-center justify-center rounded hover:bg-white hover:shadow-sm text-gray-400 hover:text-destructive transition-all"
                         onClick={(e) => {
                           e.stopPropagation()
-                          deleteSession(session.id)
+                          if (confirm("Delete this session?")) {
+                            deleteSession(session.id)
+                          }
                         }}
                         title="Delete"
                       >
-                        <X className="h-3 w-3" />
+                        <Trash2 className="h-3 w-3" />
                       </button>
                     </div>
 

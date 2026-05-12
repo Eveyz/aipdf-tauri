@@ -41,11 +41,8 @@ export function usePdf() {
     })
     
     // Save last viewed path
-    const { setLastPdfPath, createSession } = useStore.getState()
+    const { setLastPdfPath } = useStore.getState()
     setLastPdfPath(path)
-
-    // Always start a new session when opening a PDF
-    await createSession()
 
     return info
   }

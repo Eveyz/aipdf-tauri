@@ -12,11 +12,12 @@ import { usePdf } from "./hooks/usePdf"
 import { invoke } from "@tauri-apps/api/core"
 
 function App() {
-  const { pdfInfo, sidebarOpen, chatOpen, init } = useStore()
+  const { pdfInfo, activeWorkspaceId, workspaces, documents, sidebarOpen, chatOpen, init } = useStore()
   const { loadModel } = useAi()
+  const { openPdf } = usePdf()
   const layoutKey = `${sidebarOpen ? "sidebar" : "no-sidebar"}-${chatOpen ? "chat" : "no-chat"}`
 
-  const { openPdf } = usePdf()
+  const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId)
 
   useEffect(() => {
     const startup = async () => {
@@ -28,24 +29,26 @@ function App() {
         if (lastModelId) {
           await loadModel(lastModelId)
         }
-
-        const lastPdf = useStore.getState().lastPdfPath
-        if (lastPdf) {
-          await openPdf(lastPdf)
-        }
       } catch (e) {
-        console.error("Failed to load last used model or PDF:", e)
+        console.error("Failed to load last used model:", e)
       }
     }
     startup()
   }, [])
+
+  // Auto-select document for quick_read workspaces
+  useEffect(() => {
+    if (activeWorkspace?.type === 'quick_read' && documents.length > 0 && !pdfInfo) {
+      openPdf(documents[0].path)
+    }
+  }, [activeWorkspace?.id, documents, pdfInfo, openPdf])
 
   return (
     <div className="flex h-screen min-w-0 flex-col overflow-hidden">
       <Toolbar />
 
       <div className="min-h-0 flex-1 overflow-hidden">
-        {!pdfInfo ? (
+        {!activeWorkspaceId && !pdfInfo ? (
           <WelcomeScreen />
         ) : (
           <Group

@@ -52,6 +52,13 @@ pub fn run() {
             commands::ai::rename_session,
             commands::ai::get_messages,
             commands::ai::get_setting,
+            commands::ai::set_setting,
+            commands::workspace::create_workspace,
+            commands::workspace::update_workspace_metadata,
+            commands::workspace::list_workspaces,
+            commands::workspace::delete_workspace,
+            commands::workspace::add_document,
+            commands::workspace::get_documents,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

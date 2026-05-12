@@ -372,13 +372,13 @@ pub async fn get_model_info(
 }
 
 #[tauri::command]
-pub async fn create_session(state: State<'_, AppState>, name: String) -> Result<DbSession, CommandError> {
-    state.db.create_session(&name).map_err(|e| CommandError::Ai(e.to_string()))
+pub async fn create_session(state: State<'_, AppState>, workspace_id: String, name: String) -> Result<DbSession, CommandError> {
+    state.db.create_session(&workspace_id, &name).map_err(|e| CommandError::Ai(e.to_string()))
 }
 
 #[tauri::command]
-pub async fn list_sessions(state: State<'_, AppState>, limit: Option<i32>) -> Result<Vec<DbSession>, CommandError> {
-    state.db.list_sessions(limit).map_err(|e| CommandError::Ai(e.to_string()))
+pub async fn list_sessions(state: State<'_, AppState>, workspace_id: String) -> Result<Vec<DbSession>, CommandError> {
+    state.db.get_sessions(&workspace_id).map_err(|e| CommandError::Ai(e.to_string()))
 }
 
 #[tauri::command]
@@ -399,4 +399,9 @@ pub async fn get_messages(state: State<'_, AppState>, session_id: String) -> Res
 #[tauri::command]
 pub async fn get_setting(state: State<'_, AppState>, key: String) -> Result<Option<String>, CommandError> {
     state.db.get_setting(&key).map_err(|e| CommandError::Ai(e.to_string()))
+}
+
+#[tauri::command]
+pub async fn set_setting(state: State<'_, AppState>, key: String, value: String) -> Result<(), CommandError> {
+    state.db.set_setting(&key, &value).map_err(|e| CommandError::Ai(e.to_string()))
 }
