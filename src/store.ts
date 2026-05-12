@@ -58,12 +58,14 @@ export interface CloudModelEntry {
   baseUrl: string
   apiKey: string
   modelName: string
+  lastUsed?: boolean
 }
 
 export interface Workspace {
   id: string
   name: string
   type: "standard" | "quick_read"
+  lastDocPath?: string
   createdAt: number
   updatedAt: number
 }
@@ -86,22 +88,6 @@ export interface ChatSession {
 }
 
 const CLOUD_MODELS_STORAGE_KEY = "aipdf-cloud-models"
-
-function readCloudModels(): CloudModelEntry[] {
-  if (typeof window === "undefined") return []
-  try {
-    const raw = window.localStorage.getItem(CLOUD_MODELS_STORAGE_KEY)
-    return raw ? JSON.parse(raw) : []
-  } catch {
-    return []
-  }
-}
-
-function writeCloudModels(models: CloudModelEntry[]) {
-  if (typeof window !== "undefined") {
-    window.localStorage.setItem(CLOUD_MODELS_STORAGE_KEY, JSON.stringify(models))
-  }
-}
 
 interface AppState {
   // Workspaces
@@ -142,6 +128,7 @@ interface AppState {
   switchWorkspace: (id: string) => Promise<void>
   deleteWorkspace: (id: string) => Promise<void>
   upgradeWorkspace: (id: string) => Promise<void>
+  setWorkspaceLastDocPath: (path: string) => Promise<void>
   addDocument: (path: string) => Promise<void>
   setPdfInfo: (info: PdfInfo | null) => void
   setLastPdfPath: (path: string | null) => void
@@ -163,9 +150,9 @@ interface AppState {
   setChatOpen: (open: boolean) => void
   setModelManagerOpen: (open: boolean) => void
   setDownloadProgress: (progress: DownloadProgress | null) => void
-  addCloudModel: (model: CloudModelEntry) => void
-  updateCloudModel: (model: CloudModelEntry) => void
-  deleteCloudModel: (id: string) => void
+  addCloudModel: (model: CloudModelEntry) => Promise<void>
+  updateCloudModel: (model: CloudModelEntry) => Promise<void>
+  deleteCloudModel: (id: string) => Promise<void>
   createSession: () => Promise<void>
   switchSession: (id: string) => Promise<void>
   deleteSession: (id: string) => Promise<void>
@@ -200,7 +187,7 @@ export const useStore = create<AppState>((set, get) => ({
   chatOpen: true,
   modelManagerOpen: false,
   downloadProgress: null,
-  cloudModels: readCloudModels(),
+  cloudModels: [],
   lastPdfPath: null,
 
   // Sessions
@@ -214,12 +201,14 @@ export const useStore = create<AppState>((set, get) => ({
       const workspaces = await invoke<any[]>("list_workspaces", { limit: 20 })
       const mappedWorkspaces: Workspace[] = workspaces.map(w => {
         let type: "standard" | "quick_read" = "standard"
+        let lastDocPath: string | undefined = undefined
         if (w.metadata) {
           try {
             const meta = JSON.parse(w.metadata)
             if (meta.type === "quick_read" || meta.type === "standard") {
               type = meta.type
             }
+            lastDocPath = meta.lastDocPath
           } catch (e) {
             console.warn("Failed to parse workspace metadata:", e)
           }
@@ -228,16 +217,31 @@ export const useStore = create<AppState>((set, get) => ({
           id: w.id,
           name: w.name,
           type,
+          lastDocPath,
           createdAt: w.created_at,
           updatedAt: w.updated_at
         }
       })
       
+      const cloudModelsDb = await invoke<any[]>("list_cloud_models")
+      const cloudModels: CloudModelEntry[] = cloudModelsDb.map(m => {
+        const config = JSON.parse(m.config)
+        return {
+          id: m.id,
+          name: m.name,
+          vendor: config.vendor,
+          baseUrl: config.baseUrl,
+          apiKey: config.apiKey,
+          modelName: config.modelName,
+          lastUsed: m.last_used
+        }
+      })
+
       const lastPdf = await invoke<string | null>("get_setting", { key: "last_pdf_path" })
       const lastWsId = await invoke<string | null>("get_setting", { key: "active_workspace_id" })
       const lastModelId = await invoke<string | null>("get_setting", { key: "last_used_model_id" })
       
-      set({ workspaces: mappedWorkspaces, lastPdfPath: lastPdf })
+      set({ workspaces: mappedWorkspaces, cloudModels, lastPdfPath: lastPdf })
 
       if (lastWsId && mappedWorkspaces.some(w => w.id === lastWsId)) {
         await get().switchWorkspace(lastWsId)
@@ -245,7 +249,7 @@ export const useStore = create<AppState>((set, get) => ({
 
       if (lastModelId) {
         if (lastModelId.startsWith("cloud:")) {
-          const cloudModel = get().cloudModels.find(m => `cloud:${m.id}` === lastModelId)
+          const cloudModel = cloudModels.find(m => `cloud:${m.id}` === lastModelId)
           if (cloudModel) {
             set({ loadedModel: {
               id: `cloud:${cloudModel.id}`,
@@ -288,15 +292,18 @@ export const useStore = create<AppState>((set, get) => ({
     set(state => ({ workspaces: [newWs, ...state.workspaces] }))
     return newWs.id
   },
+switchWorkspace: async (id) => {
+  const docs = await invoke<any[]>("get_documents", { workspaceId: id })
+  const sessions = await invoke<any[]>("list_sessions", { workspaceId: id })
 
-  switchWorkspace: async (id) => {
-    const docs = await invoke<any[]>("get_documents", { workspaceId: id })
-    const sessions = await invoke<any[]>("list_sessions", { workspaceId: id })
-    
-    invoke("set_setting", { key: "active_workspace_id", value: id }).catch(console.error)
+  invoke("set_setting", { key: "active_workspace_id", value: id }).catch(console.error)
+  invoke("touch_workspace", { id }).catch(console.error)
 
-    set({
-      activeWorkspaceId: id,
+  set((state) => ({
+    activeWorkspaceId: id,
+    workspaces: state.workspaces.map(w => 
+      w.id === id ? { ...w, updatedAt: Date.now() } : w
+    ),
       documents: docs.map(d => ({
         id: d.id,
         workspaceId: d.workspace_id,
@@ -315,7 +322,7 @@ export const useStore = create<AppState>((set, get) => ({
       activeSessionId: sessions[0]?.id || null,
       chatMessages: [], 
       pdfInfo: null, 
-    })
+    }))
 
     if (sessions[0]) {
       get().switchSession(sessions[0].id)
@@ -333,10 +340,16 @@ export const useStore = create<AppState>((set, get) => ({
   upgradeWorkspace: async (id) => {
     // In a real app, we'd call a backend command to update metadata.
     // Let's assume update_workspace_metadata exists or just handle it locally if it fails.
+    const ws = get().workspaces.find(w => w.id === id)
+    const newMetadata = JSON.stringify({ 
+      type: "standard",
+      lastDocPath: ws?.lastDocPath 
+    })
+
     try {
       await invoke("update_workspace_metadata", { 
         id, 
-        metadata: JSON.stringify({ type: "standard" }) 
+        metadata: newMetadata 
       })
     } catch (e) {
       console.warn("Failed to update workspace metadata on backend:", e)
@@ -345,6 +358,34 @@ export const useStore = create<AppState>((set, get) => ({
     set(state => ({
       workspaces: state.workspaces.map(w => 
         w.id === id ? { ...w, type: "standard" } : w
+      )
+    }))
+  },
+
+  setWorkspaceLastDocPath: async (path) => {
+    const id = get().activeWorkspaceId
+    if (!id) return
+
+    const ws = get().workspaces.find(w => w.id === id)
+    if (!ws) return
+
+    const newMetadata = JSON.stringify({ 
+      type: ws.type,
+      lastDocPath: path 
+    })
+
+    try {
+      await invoke("update_workspace_metadata", { 
+        id, 
+        metadata: newMetadata 
+      })
+    } catch (e) {
+      console.warn("Failed to update workspace metadata on backend:", e)
+    }
+
+    set(state => ({
+      workspaces: state.workspaces.map(w => 
+        w.id === id ? { ...w, lastDocPath: path } : w
       )
     }))
   },
@@ -383,7 +424,7 @@ export const useStore = create<AppState>((set, get) => ({
   setLoadedModel: (model) => {
     set({ loadedModel: model })
     if (model) {
-      invoke("set_setting", { key: "last_used_model_id", value: model.id }).catch(console.error)
+      invoke("set_last_used_model", { id: model.id }).catch(console.error)
     }
   },
   setIsGenerating: (generating) => set({ isGenerating: generating }),
@@ -432,27 +473,37 @@ export const useStore = create<AppState>((set, get) => ({
   setChatOpen: (open) => set({ chatOpen: open }),
   setModelManagerOpen: (open) => set({ modelManagerOpen: open }),
   setDownloadProgress: (progress) => set({ downloadProgress: progress }),
-  addCloudModel: (model) =>
-    set((state) => {
-      const cloudModels = [...state.cloudModels, model]
-      writeCloudModels(cloudModels)
-      return { cloudModels }
-    }),
-  updateCloudModel: (model) =>
-    set((state) => {
-      const cloudModels = state.cloudModels.map((m) => (m.id === model.id ? model : m))
-      writeCloudModels(cloudModels)
-      return { cloudModels }
-    }),
-  deleteCloudModel: (id) =>
-    set((state) => {
-      const cloudModels = state.cloudModels.filter((m) => m.id !== id)
-      writeCloudModels(cloudModels)
-      return {
-        cloudModels,
-        loadedModel: state.loadedModel?.id === `cloud:${id}` ? null : state.loadedModel,
-      }
-    }),
+  addCloudModel: async (model) => {
+    await invoke("save_cloud_model", {
+      id: model.id,
+      name: model.name,
+      vendor: model.vendor,
+      baseUrl: model.baseUrl,
+      apiKey: model.apiKey,
+      modelName: model.modelName
+    })
+    set((state) => ({ cloudModels: [...state.cloudModels, model] }))
+  },
+  updateCloudModel: async (model) => {
+    await invoke("save_cloud_model", {
+      id: model.id,
+      name: model.name,
+      vendor: model.vendor,
+      baseUrl: model.baseUrl,
+      apiKey: model.apiKey,
+      modelName: model.modelName
+    })
+    set((state) => ({
+      cloudModels: state.cloudModels.map((m) => (m.id === model.id ? model : m)),
+    }))
+  },
+  deleteCloudModel: async (id) => {
+    await invoke("delete_cloud_model_entry", { id })
+    set((state) => ({
+      cloudModels: state.cloudModels.filter((m) => m.id !== id),
+      loadedModel: state.loadedModel?.id === `cloud:${id}` ? null : state.loadedModel,
+    }))
+  },
   createSession: async () => {
     const wsId = get().activeWorkspaceId
     if (!wsId) {

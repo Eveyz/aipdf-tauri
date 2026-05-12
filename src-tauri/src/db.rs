@@ -42,6 +42,15 @@ pub struct DbMessage {
     pub created_at: i64,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DbModel {
+    pub id: String,
+    pub name: String,
+    pub source: String, // 'local' or 'cloud'
+    pub config: String, // JSON string
+    pub last_used: bool,
+}
+
 pub struct DbManager {
     conn: Mutex<Connection>,
 }
@@ -58,7 +67,27 @@ impl DbManager {
 
     fn init(&self) -> Result<()> {
         let conn = self.conn.lock().unwrap();
-        
+
+        // Migration: Check if models table exists
+        let models_exists = {
+            let mut stmt = conn.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='models'")?;
+            let mut rows = stmt.query([])?;
+            rows.next()?.is_some()
+        };
+
+        if !models_exists {
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS models (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    config TEXT NOT NULL,
+                    last_used INTEGER DEFAULT 0
+                )",
+                [],
+            )?;
+        }
+
         // Migration: Check if workspaces table has metadata
         let workspaces_needs_migration = {
             let mut stmt = conn.prepare("PRAGMA table_info(workspaces)")?;
@@ -158,6 +187,83 @@ impl DbManager {
         Ok(())
     }
 
+    // Model methods
+    pub fn add_or_update_model(&self, id: &str, name: &str, source: &str, config: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO models (id, name, source, config) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(id) DO UPDATE SET name=?2, source=?3, config=?4",
+            params![id, name, source, config],
+        )?;
+        Ok(())
+    }
+
+    pub fn set_last_used_model(&self, id: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("UPDATE models SET last_used = 0", [])?;
+        conn.execute("UPDATE models SET last_used = 1 WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    pub fn get_last_used_model(&self) -> Result<Option<DbModel>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT id, name, source, config, last_used FROM models WHERE last_used = 1 LIMIT 1")?;
+        let mut rows = stmt.query_map([], |row| {
+            Ok(DbModel {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                source: row.get(2)?,
+                config: row.get(3)?,
+                last_used: row.get::<_, i32>(4)? != 0,
+            })
+        })?;
+
+        if let Some(row) = rows.next() {
+            Ok(Some(row?))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn list_models(&self, source: Option<&str>) -> Result<Vec<DbModel>> {
+        let conn = self.conn.lock().unwrap();
+        let mut query = "SELECT id, name, source, config, last_used FROM models".to_string();
+        if source.is_some() {
+            query.push_str(" WHERE source = ?1");
+        }
+        query.push_str(" ORDER BY name ASC");
+
+        let mut stmt = conn.prepare(&query)?;
+        
+        let row_mapper = |row: &rusqlite::Row| {
+            Ok(DbModel {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                source: row.get(2)?,
+                config: row.get(3)?,
+                last_used: row.get::<_, i32>(4)? != 0,
+            })
+        };
+
+        let rows = if let Some(s) = source {
+            stmt.query_map(params![s], row_mapper)?
+        } else {
+            stmt.query_map([], row_mapper)?
+        };
+
+        let mut models = Vec::new();
+        for row in rows {
+            models.push(row?);
+        }
+        Ok(models)
+    }
+
+    pub fn delete_model_entry(&self, id: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM models WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
     // Workspace methods
     pub fn create_workspace(&self, name: &str, metadata: Option<&str>) -> Result<DbWorkspace> {
         let conn = self.conn.lock().unwrap();
@@ -228,6 +334,32 @@ impl DbManager {
             params![now, id],
         )?;
         Ok(())
+    }
+
+    pub fn find_workspace_by_doc_path(&self, path: &str) -> Result<Option<DbWorkspace>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT w.id, w.name, w.metadata, w.created_at, w.updated_at 
+             FROM workspaces w
+             JOIN documents d ON w.id = d.workspace_id
+             WHERE d.path = ?1
+             LIMIT 1"
+        )?;
+        let mut rows = stmt.query_map(params![path], |row| {
+            Ok(DbWorkspace {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                metadata: row.get(2)?,
+                created_at: row.get(3)?,
+                updated_at: row.get(4)?,
+            })
+        })?;
+
+        if let Some(row) = rows.next() {
+            Ok(Some(row?))
+        } else {
+            Ok(None)
+        }
     }
 
     // Document methods

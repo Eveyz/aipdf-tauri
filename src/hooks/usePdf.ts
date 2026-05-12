@@ -41,8 +41,9 @@ export function usePdf() {
     })
     
     // Save last viewed path
-    const { setLastPdfPath } = useStore.getState()
+    const { setLastPdfPath, setWorkspaceLastDocPath } = useStore.getState()
     setLastPdfPath(path)
+    await setWorkspaceLastDocPath(path)
 
     return info
   }

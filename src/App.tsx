@@ -22,26 +22,22 @@ function App() {
   useEffect(() => {
     const startup = async () => {
       await init()
-      
-      // Load last used model
-      try {
-        const lastModelId = await invoke<string | null>("get_setting", { key: "last_used_model_id" })
-        if (lastModelId) {
-          await loadModel(lastModelId)
-        }
-      } catch (e) {
-        console.error("Failed to load last used model:", e)
-      }
     }
     startup()
   }, [])
 
-  // Auto-select document for quick_read workspaces
+  // Auto-select document (last active or first for quick_read)
   useEffect(() => {
-    if (activeWorkspace?.type === 'quick_read' && documents.length > 0 && !pdfInfo) {
-      openPdf(documents[0].path)
+    if (activeWorkspaceId && documents.length > 0 && !pdfInfo) {
+      const wsLastDoc = activeWorkspace?.lastDocPath;
+      const docToOpen = documents.find(d => d.path === wsLastDoc) || 
+                        (activeWorkspace?.type === 'quick_read' ? documents[0] : null);
+      
+      if (docToOpen) {
+        openPdf(docToOpen.path);
+      }
     }
-  }, [activeWorkspace?.id, documents, pdfInfo, openPdf])
+  }, [activeWorkspaceId, documents, pdfInfo, openPdf, activeWorkspace?.type, activeWorkspace?.lastDocPath])
 
   return (
     <div className="flex h-screen min-w-0 flex-col overflow-hidden">

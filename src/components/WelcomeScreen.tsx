@@ -1,4 +1,5 @@
 import { open } from "@tauri-apps/plugin-dialog"
+import { invoke } from "@tauri-apps/api/core"
 import { FileText, Folder, FolderPlus, Loader2 } from "lucide-react"
 import { usePdf } from "../hooks/usePdf"
 import { useStore } from "../store"
@@ -30,12 +31,22 @@ export function WelcomeScreen() {
       })
       if (path && typeof path === 'string') {
         const fileName = path.split("/").pop() || "Quick Open"
-        const wsId = await createWorkspace(fileName, "quick_read")
-        await switchWorkspace(wsId)
-        await addDocument(path)
-        await openPdf(path)
-        // Explicitly create a session for the new quick_read workspace
-        await useStore.getState().createSession()
+        
+        // Step 1: Check for existing workspace containing this absolute path
+        const existingWs = await invoke<any | null>("find_workspace_by_path", { path })
+
+        if (existingWs) {
+          // If it exists, just switch to it and open the PDF
+          await switchWorkspace(existingWs.id)
+          await openPdf(path)
+        } else {
+          // Create a NEW workspace with type: 'quick_read'
+          const wsId = await createWorkspace(fileName, "quick_read")
+          await switchWorkspace(wsId)
+          await addDocument(path)
+          await openPdf(path)
+          await useStore.getState().createSession()
+        }
       }
     } catch (e) {
       console.error("Failed to open PDF:", e)
@@ -47,9 +58,22 @@ export function WelcomeScreen() {
     
     setIsCreating(true)
     try {
-      const id = await createWorkspace(newWorkspaceName.trim(), "standard")
+      // Logic to prevent simple name collisions for "New Workspace"
+      let finalName = newWorkspaceName.trim()
+      const existingNames = workspaces
+        .filter(w => w.type === 'standard')
+        .map(w => w.name)
+      
+      if (existingNames.includes(finalName)) {
+        let counter = 1
+        while (existingNames.includes(`${finalName} (${counter})`)) {
+          counter++
+        }
+        finalName = `${finalName} (${counter})`
+      }
+
+      const id = await createWorkspace(finalName, "standard")
       await switchWorkspace(id)
-      // Explicitly create an initial session for the new workspace
       await useStore.getState().createSession()
       setIsNameDialogOpen(false)
     } catch (e) {
@@ -60,8 +84,21 @@ export function WelcomeScreen() {
     }
   }
 
-  const standardWorkspaces = workspaces.filter(w => w.type === "standard")
-  const quickReadWorkspaces = workspaces.filter(w => w.type === "quick_read")
+  // Step 2: Strict Frontend Filtering & Deduplication
+  const deduplicateWorkspaces = (wsList: typeof workspaces) => {
+    const seen = new Set<string>()
+    return wsList
+      .filter(w => {
+        if (seen.has(w.id)) return false
+        seen.add(w.id)
+        return true
+      })
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+  }
+
+  const uniqueWorkspaces = deduplicateWorkspaces(workspaces)
+  const standardWorkspaces = uniqueWorkspaces.filter(w => w.type === "standard")
+  const quickReadWorkspaces = uniqueWorkspaces.filter(w => w.type === "quick_read")
 
   return (
     <div className="h-full bg-[#F9F9FB] overflow-y-auto">

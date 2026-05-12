@@ -24,6 +24,16 @@ pub async fn delete_workspace(state: State<'_, AppState>, id: String) -> Result<
 }
 
 #[tauri::command]
+pub async fn find_workspace_by_path(state: State<'_, AppState>, path: String) -> Result<Option<DbWorkspace>, CommandError> {
+    state.db.find_workspace_by_doc_path(&path).map_err(|e| CommandError::Ai(e.to_string()))
+}
+
+#[tauri::command]
+pub async fn touch_workspace(state: State<'_, AppState>, id: String) -> Result<(), CommandError> {
+    state.db.update_workspace_time(&id).map_err(|e| CommandError::Ai(e.to_string()))
+}
+
+#[tauri::command]
 pub async fn add_document(state: State<'_, AppState>, workspace_id: String, path: String, name: String) -> Result<DbDocument, CommandError> {
     state.db.add_document(&workspace_id, &path, &name).map_err(|e| CommandError::Ai(e.to_string()))
 }

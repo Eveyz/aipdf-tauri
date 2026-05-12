@@ -67,8 +67,16 @@ pub async fn load_model(
         ai.tokenizer = Some(tokenizer);
     }
 
-    // Save as last used model
+    // Save as last used model in settings AND mark in models table
     state.db.set_setting("last_used_model_id", &model_id)
+        .map_err(|e| CommandError::Ai(e.to_string()))?;
+    
+    // For local models, we ensure they exist in the models table first
+    let config = json!({ "path": entry.path }).to_string();
+    state.db.add_or_update_model(&entry.id, &entry.name, "local", &config)
+        .map_err(|e| CommandError::Ai(e.to_string()))?;
+    
+    state.db.set_last_used_model(&model_id)
         .map_err(|e| CommandError::Ai(e.to_string()))?;
 
     Ok(ModelInfo {
@@ -78,6 +86,60 @@ pub async fn load_model(
         has_tokenizer,
         path: entry.path.to_string_lossy().to_string(),
     })
+}
+
+#[tauri::command]
+pub async fn save_cloud_model(
+    state: State<'_, AppState>,
+    id: String,
+    name: String,
+    vendor: String,
+    base_url: String,
+    api_key: String,
+    model_name: String,
+) -> Result<(), CommandError> {
+    let config = json!({
+        "vendor": vendor,
+        "baseUrl": base_url,
+        "apiKey": api_key,
+        "modelName": model_name,
+    }).to_string();
+
+    state.db.add_or_update_model(&id, &name, "cloud", &config)
+        .map_err(|e| CommandError::Ai(e.to_string()))?;
+    
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn set_last_used_model(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<(), CommandError> {
+    state.db.set_last_used_model(&id)
+        .map_err(|e| CommandError::Ai(e.to_string()))?;
+    
+    state.db.set_setting("last_used_model_id", &id)
+        .map_err(|e| CommandError::Ai(e.to_string()))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn list_cloud_models(
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::db::DbModel>, CommandError> {
+    state.db.list_models(Some("cloud"))
+        .map_err(|e| CommandError::Ai(e.to_string()))
+}
+
+#[tauri::command]
+pub async fn delete_cloud_model_entry(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<(), CommandError> {
+    state.db.delete_model_entry(&id)
+        .map_err(|e| CommandError::Ai(e.to_string()))
 }
 
 #[tauri::command]
