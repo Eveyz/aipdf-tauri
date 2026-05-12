@@ -32,8 +32,11 @@ export function WelcomeScreen() {
       if (path && typeof path === 'string') {
         const fileName = path.split("/").pop() || "Quick Open"
         
-        // Step 1: Check for existing workspace containing this absolute path
-        const existingWs = await invoke<any | null>("find_workspace_by_path", { path })
+        // Step 1: Check for existing workspace containing this absolute path AND is type 'quick_read'
+        const existingWs = await invoke<any | null>("find_workspace_by_path", { 
+          path, 
+          workspaceType: "quick_read" 
+        })
 
         if (existingWs) {
           // If it exists, just switch to it and open the PDF

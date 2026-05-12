@@ -24,8 +24,8 @@ pub async fn delete_workspace(state: State<'_, AppState>, id: String) -> Result<
 }
 
 #[tauri::command]
-pub async fn find_workspace_by_path(state: State<'_, AppState>, path: String) -> Result<Option<DbWorkspace>, CommandError> {
-    state.db.find_workspace_by_doc_path(&path).map_err(|e| CommandError::Ai(e.to_string()))
+pub async fn find_workspace_by_path(state: State<'_, AppState>, path: String, workspace_type: Option<String>) -> Result<Option<DbWorkspace>, CommandError> {
+    state.db.find_workspace_by_doc_path(&path, workspace_type.as_deref()).map_err(|e| CommandError::Ai(e.to_string()))
 }
 
 #[tauri::command]

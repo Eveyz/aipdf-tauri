@@ -336,15 +336,22 @@ impl DbManager {
         Ok(())
     }
 
-    pub fn find_workspace_by_doc_path(&self, path: &str) -> Result<Option<DbWorkspace>> {
+    pub fn find_workspace_by_doc_path(&self, path: &str, workspace_type: Option<&str>) -> Result<Option<DbWorkspace>> {
         let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare(
-            "SELECT w.id, w.name, w.metadata, w.created_at, w.updated_at 
-             FROM workspaces w
-             JOIN documents d ON w.id = d.workspace_id
-             WHERE d.path = ?1
-             LIMIT 1"
-        )?;
+        let mut query = "SELECT w.id, w.name, w.metadata, w.created_at, w.updated_at 
+                         FROM workspaces w
+                         JOIN documents d ON w.id = d.workspace_id
+                         WHERE d.path = ?1".to_string();
+        
+        if let Some(t) = workspace_type {
+            // metadata column stores JSON like {"type": "quick_read", ...}
+            // We use SQL LIKE for a simple check since we know the format
+            query.push_str(&format!(" AND w.metadata LIKE '%\"type\":\"{}\"%'", t));
+        }
+        
+        query.push_str(" LIMIT 1");
+
+        let mut stmt = conn.prepare(&query)?;
         let mut rows = stmt.query_map(params![path], |row| {
             Ok(DbWorkspace {
                 id: row.get(0)?,
