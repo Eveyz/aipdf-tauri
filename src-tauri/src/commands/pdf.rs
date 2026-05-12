@@ -1,8 +1,9 @@
-use tauri::State;
+use tauri::{Manager, State};
 use crate::state::AppState;
 use crate::commands::CommandError;
 use crate::pdf::document::PdfFile;
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
 #[derive(Serialize, Deserialize)]
 pub struct PdfInfo {
@@ -21,11 +22,12 @@ pub struct RenderResult {
 
 #[tauri::command]
 pub async fn open_pdf(
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
     path: String,
 ) -> Result<PdfInfo, CommandError> {
     println!("[open_pdf] called with path: {}", path);
-    let doc = PdfFile::open(&path)
+    let doc = PdfFile::open(&path, pdfium_library_candidates(&app))
         .map_err(|e| CommandError::Pdf(e.to_string()))?;
     println!("[open_pdf] PdfFile opened successfully");
 
@@ -48,6 +50,30 @@ pub async fn open_pdf(
         page_width,
         page_height,
     })
+}
+
+fn pdfium_library_candidates(app: &tauri::AppHandle) -> Vec<PathBuf> {
+    let library_name = pdfium_render::prelude::Pdfium::pdfium_platform_library_name();
+    let mut candidates = Vec::new();
+
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        candidates.push(resource_dir.join("pdfium").join(&library_name));
+    }
+
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(exe_dir) = exe_path.parent() {
+            candidates.push(exe_dir.join("pdfium").join(&library_name));
+            candidates.push(exe_dir.join("../Resources/pdfium").join(&library_name));
+            candidates.push(exe_dir.join("../lib/aipdf/pdfium").join(&library_name));
+        }
+    }
+
+    if let Ok(current_dir) = std::env::current_dir() {
+        candidates.push(current_dir.join("resources/pdfium").join(&library_name));
+        candidates.push(current_dir.join("src-tauri/resources/pdfium").join(&library_name));
+    }
+
+    candidates
 }
 
 #[tauri::command]

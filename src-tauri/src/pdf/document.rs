@@ -1,36 +1,66 @@
 use pdfium_render::prelude::*;
 use super::renderer::RenderedPage;
 use super::text::PageText;
+use std::path::PathBuf;
 
 pub struct PdfFile {
     path: String,
+    pdfium_library_candidates: Vec<PathBuf>,
 }
 
 unsafe impl Send for PdfFile {}
 
 impl PdfFile {
-    pub fn open(path: &str) -> Result<Self, String> {
-        println!("[PdfFile::open] attempting to bind to system pdfium library...");
-        let bindings = Pdfium::bind_to_system_library()
-            .map_err(|e| format!("Failed to load pdfium library: {}", e))?;
+    pub fn open(path: &str, pdfium_library_candidates: Vec<PathBuf>) -> Result<Self, String> {
+        println!("[PdfFile::open] attempting to bind to pdfium library...");
+        let pdfium = Self::load_pdfium(&pdfium_library_candidates)?;
         println!("[PdfFile::open] pdfium library bound successfully");
-        let pdfium = Pdfium::new(bindings);
         println!("[PdfFile::open] loading PDF from file: {}", path);
         let _doc = pdfium.load_pdf_from_file(path, None)
             .map_err(|e| format!("Failed to open PDF: {}", e))?;
         println!("[PdfFile::open] PDF loaded successfully");
         Ok(Self {
             path: path.to_string(),
+            pdfium_library_candidates,
         })
+    }
+
+    fn load_pdfium(candidates: &[PathBuf]) -> Result<Pdfium, String> {
+        let mut attempted = Vec::new();
+
+        for candidate in candidates {
+            if candidate.exists() {
+                match Pdfium::bind_to_library(candidate) {
+                    Ok(bindings) => {
+                        println!("[PdfFile] loaded bundled pdfium from {}", candidate.display());
+                        return Ok(Pdfium::new(bindings));
+                    }
+                    Err(e) => {
+                        attempted.push(format!("{} ({})", candidate.display(), e));
+                    }
+                }
+            } else {
+                attempted.push(format!("{} (missing)", candidate.display()));
+            }
+        }
+
+        match Pdfium::bind_to_system_library() {
+            Ok(bindings) => Ok(Pdfium::new(bindings)),
+            Err(e) => {
+                attempted.push(format!("system library ({})", e));
+                Err(format!(
+                    "Failed to load pdfium library. Tried: {}",
+                    attempted.join(", ")
+                ))
+            }
+        }
     }
 
     fn with_doc<F, R>(&self, f: F) -> Result<R, String>
     where
         F: FnOnce(&PdfDocument<'_>) -> Result<R, String>,
     {
-        let bindings = Pdfium::bind_to_system_library()
-            .map_err(|e| format!("Failed to load pdfium library: {}", e))?;
-        let pdfium = Pdfium::new(bindings);
+        let pdfium = Self::load_pdfium(&self.pdfium_library_candidates)?;
         let document = pdfium.load_pdf_from_file(&self.path, None)
             .map_err(|e| format!("Failed to open PDF: {}", e))?;
         f(&document)
