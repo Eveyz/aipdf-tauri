@@ -1,4 +1,3 @@
-import { open } from "@tauri-apps/plugin-dialog"
 import {
   ChevronLeft,
   ChevronRight,
@@ -24,7 +23,7 @@ import {
 } from "./ui/tooltip"
 
 export function Toolbar() {
-  const { openPdf, nextPage, prevPage, goToPage } = usePdf()
+  const { nextPage, prevPage, goToPage } = usePdf()
   const {
     pdfInfo,
     currentPage,

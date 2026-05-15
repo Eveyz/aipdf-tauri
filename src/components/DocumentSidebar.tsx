@@ -2,24 +2,23 @@ import { useState } from "react"
 import {
   FileText,
   Sparkles,
-  StickyNote,
+  Highlighter,
   FileSearch,
-  Feather,
-  Calendar,
   Plus,
   File,
+  Trash2,
 } from "lucide-react"
 import { ScrollArea } from "./ui/scroll-area"
 import { useStore } from "../store"
 import { usePdf } from "../hooks/usePdf"
 import { cn } from "../lib/utils"
 
-type SidebarTab = "outline" | "extraction" | "notes"
+type SidebarTab = "outline" | "extraction" | "highlights"
 
 const TABS: { id: SidebarTab; label: string; icon: typeof FileText }[] = [
   { id: "outline", label: "Outline", icon: FileText },
   { id: "extraction", label: "Extraction", icon: Sparkles },
-  { id: "notes", label: "Notes", icon: StickyNote },
+  { id: "highlights", label: "Highlights", icon: Highlighter },
 ]
 
 // Mock outline data
@@ -52,34 +51,6 @@ const MOCK_EXTRACTIONS = {
     { title: "Attention Mechanism", subtitle: "Learning contextual dependencies", page: 8 },
   ],
 }
-
-// Mock notes data
-const MOCK_NOTES = [
-  {
-    id: "1",
-    text: "In the two applications discussed so far, a neural network learned to transform an input... into an output...",
-    page: 4,
-    color: "bg-yellow-400",
-    date: "Oct 2023",
-    source: "highlight" as const,
-  },
-  {
-    id: "2",
-    text: "The key insight is that deep learning models can learn hierarchical representations, where each layer captures increasingly abstract features of the input data.",
-    page: 6,
-    color: "bg-blue-400",
-    date: "Nov 2023",
-    source: "ai" as const,
-  },
-  {
-    id: "3",
-    text: "Attention mechanisms allow the model to focus on relevant parts of the input when producing each element of the output, enabling better handling of long-range dependencies.",
-    page: 8,
-    color: "bg-green-400",
-    date: "Nov 2023",
-    source: "highlight" as const,
-  },
-]
 
 function EmptyState({ icon: Icon, message }: { icon: typeof FileText; message: string }) {
   return (
@@ -184,40 +155,47 @@ function ExtractionTab() {
   )
 }
 
-function NotesTab() {
+function HighlightsTab() {
   const { goToPage } = usePdf()
+  const { highlights, lastPdfPath, deleteHighlight } = useStore()
+  
+  const docHighlights = highlights.filter(h => h.documentPath === lastPdfPath)
 
-  if (MOCK_NOTES.length === 0) {
-    return <EmptyState icon={Feather} message="No notes saved yet." />
+  if (docHighlights.length === 0) {
+    return <EmptyState icon={Highlighter} message="No highlights saved yet. Select text in the PDF to add some." />
   }
 
   return (
     <div className="py-2">
-      {MOCK_NOTES.map((note) => (
-        <button
-          key={note.id}
-          onClick={() => goToPage(note.page - 1)}
-          className="w-full text-left relative mx-4 mb-3 p-3 bg-white border border-gray-150 rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.04)] hover:shadow-md transition-all cursor-pointer overflow-hidden"
-          style={{ width: "calc(100% - 2rem)" }}
+      {docHighlights.map((highlight) => (
+        <div
+          key={highlight.id}
+          className="relative mx-4 mb-3 group"
         >
-          <div className={cn("absolute left-0 top-0 bottom-0 w-1", note.color)} />
-          <div className="pl-2">
-            <p className="text-xs text-gray-700 leading-relaxed italic line-clamp-3">{note.text}</p>
-            <div className="flex items-center gap-2 mt-2">
-              <PageTag page={note.page} />
-              <span className="flex items-center gap-1 text-[10px] text-gray-400">
-                <Calendar className="h-2.5 w-2.5" />
-                {note.date}
-              </span>
-              {note.source === "ai" && (
-                <span className="flex items-center gap-0.5 text-[10px] text-gray-400">
-                  <Sparkles className="h-2.5 w-2.5" />
-                  AI
-                </span>
-              )}
+          <button
+            onClick={() => goToPage(highlight.position.pageNumber - 1)}
+            className="w-full text-left relative p-3 bg-white border border-gray-150 rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.04)] hover:shadow-md transition-all cursor-pointer overflow-hidden pr-10"
+          >
+            <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-400" />
+            <p className="text-xs text-gray-700 leading-relaxed line-clamp-3">
+              {highlight.content.text || "Area highlight"}
+            </p>
+            <div className="flex items-center justify-between mt-2">
+              <PageTag page={highlight.position.pageNumber} />
             </div>
-          </div>
-        </button>
+          </button>
+          
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              deleteHighlight(highlight.id)
+            }}
+            className="absolute right-2 top-3 p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-md opacity-0 group-hover:opacity-100 transition-all"
+            title="Delete highlight"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        </div>
       ))}
     </div>
   )
@@ -328,7 +306,7 @@ export function DocumentSidebar() {
             <ScrollArea className="scrollbar-thin min-h-0 flex-1">
               {activeTab === "outline" && <OutlineTab />}
               {activeTab === "extraction" && <ExtractionTab />}
-              {activeTab === "notes" && <NotesTab />}
+              {activeTab === "highlights" && <HighlightsTab />}
             </ScrollArea>
           </>
         )}

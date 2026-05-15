@@ -7,13 +7,10 @@ import { DocumentSidebar } from "./components/DocumentSidebar"
 import { ChatPanel } from "./components/ChatPanel"
 import { ModelManager } from "./components/ModelManager"
 import { WelcomeScreen } from "./components/WelcomeScreen"
-import { useAi } from "./hooks/useAi"
 import { usePdf } from "./hooks/usePdf"
-import { invoke } from "@tauri-apps/api/core"
 
 function App() {
   const { pdfInfo, activeWorkspaceId, workspaces, documents, sidebarOpen, chatOpen, init } = useStore()
-  const { loadModel } = useAi()
   const { openPdf } = usePdf()
   const layoutKey = `${sidebarOpen ? "sidebar" : "no-sidebar"}-${chatOpen ? "chat" : "no-chat"}`
 

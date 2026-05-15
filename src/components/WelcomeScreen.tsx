@@ -1,11 +1,11 @@
 import { open } from "@tauri-apps/plugin-dialog"
 import { invoke } from "@tauri-apps/api/core"
-import { FileText, Folder, FolderPlus, Loader2 } from "lucide-react"
+import { FileText, Folder, FolderPlus, Loader2, Search } from "lucide-react"
 import { usePdf } from "../hooks/usePdf"
 import { useStore } from "../store"
 import { formatRelativeTime } from "../lib/utils"
 import { Button } from "./ui/button"
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import {
   Dialog,
   DialogContent,
@@ -22,6 +22,11 @@ export function WelcomeScreen() {
   const [isNameDialogOpen, setIsNameDialogOpen] = useState(false)
   const [newWorkspaceName, setNewWorkspaceName] = useState("New Workspace")
   const [isCreating, setIsCreating] = useState(false)
+
+  // Scalability states
+  const [searchQuery, setSearchQuery] = useState('')
+  const [isWorkspacesExpanded, setIsWorkspacesExpanded] = useState(false)
+  const [isFilesExpanded, setIsFilesExpanded] = useState(false)
 
   async function handleQuickOpen() {
     try {
@@ -87,30 +92,52 @@ export function WelcomeScreen() {
     }
   }
 
-  // Step 2: Strict Frontend Filtering & Deduplication
-  const deduplicateWorkspaces = (wsList: typeof workspaces) => {
+  // Deduplicate and Filter logic
+  const { filteredWorkspaces, filteredFiles } = useMemo(() => {
     const seen = new Set<string>()
-    return wsList
+    const unique = workspaces
       .filter(w => {
         if (seen.has(w.id)) return false
         seen.add(w.id)
         return true
       })
       .sort((a, b) => b.updatedAt - a.updatedAt)
-  }
 
-  const uniqueWorkspaces = deduplicateWorkspaces(workspaces)
-  const standardWorkspaces = uniqueWorkspaces.filter(w => w.type === "standard")
-  const quickReadWorkspaces = uniqueWorkspaces.filter(w => w.type === "quick_read")
+    const search = searchQuery.toLowerCase().trim()
+    const filtered = search 
+      ? unique.filter(w => w.name.toLowerCase().includes(search))
+      : unique
+
+    return {
+      filteredWorkspaces: filtered.filter(w => w.type === "standard"),
+      filteredFiles: filtered.filter(w => w.type === "quick_read")
+    }
+  }, [workspaces, searchQuery])
+
+  const defaultCount = 8
+  const displayWorkspaces = isWorkspacesExpanded ? filteredWorkspaces : filteredWorkspaces.slice(0, defaultCount)
+  const displayFiles = isFilesExpanded ? filteredFiles : filteredFiles.slice(0, defaultCount)
 
   return (
     <div className="h-full bg-[#F9F9FB] overflow-y-auto">
       <div className="max-w-4xl mx-auto pt-20 px-6 pb-20">
-        <header>
-          <h1 className="text-2xl font-semibold text-gray-800 mb-8">Welcome back</h1>
+        <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+          <h1 className="text-2xl font-semibold text-gray-800">Welcome back</h1>
+          
+          {/* Inline Search Filter */}
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-200 rounded-lg w-64 focus-within:border-gray-400 focus-within:ring-1 focus-within:ring-gray-200 transition-all">
+            <Search className="w-4 h-4 text-gray-400" />
+            <input 
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search projects or files..."
+              className="bg-transparent text-sm outline-none placeholder-gray-400 w-full"
+            />
+          </div>
         </header>
 
-        <section className="grid grid-cols-2 gap-4 mb-12">
+        <section className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-12">
           {/* Card 1: New Workspace */}
           <button 
             type="button"
@@ -144,52 +171,74 @@ export function WelcomeScreen() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
           <section>
             <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">RECENT WORKSPACES</h2>
-            <div className="flex flex-col gap-2">
-              {standardWorkspaces.length === 0 ? (
-                <p className="text-sm text-gray-500 italic">No workspaces yet.</p>
+            <div className={`flex flex-col gap-1 transition-all duration-300 ${isWorkspacesExpanded ? 'max-h-[50vh] overflow-y-auto custom-scrollbar pr-2' : 'overflow-hidden'}`}>
+              {filteredWorkspaces.length === 0 ? (
+                <div className="py-6 text-center text-sm text-gray-400">
+                  {searchQuery ? `No workspaces found matching "${searchQuery}"` : "No workspaces yet."}
+                </div>
               ) : (
-                standardWorkspaces.map((workspace) => (
-                  <button 
-                    key={workspace.id}
-                    onClick={() => switchWorkspace(workspace.id)}
-                    className="flex items-center justify-between p-3 bg-transparent hover:bg-white hover:shadow-sm rounded-lg cursor-pointer transition-all group border border-transparent hover:border-gray-200 w-full text-left"
-                  >
-                    <div className="flex items-center gap-3">
-                      <Folder className="w-4 h-4 text-gray-400 group-hover:text-gray-600 transition-colors" />
-                      <span className="text-sm text-gray-800 font-medium">{workspace.name}</span>
-                    </div>
-                    <span className="text-[11px] text-gray-400">
-                      {formatRelativeTime(workspace.updatedAt) === "just now" 
-                        ? "just now" 
-                        : `${formatRelativeTime(workspace.updatedAt)}`}
-                    </span>
-                  </button>
-                ))
+                <>
+                  {displayWorkspaces.map((workspace) => (
+                    <button 
+                      key={workspace.id}
+                      onClick={() => switchWorkspace(workspace.id)}
+                      className="flex items-center justify-between p-3 bg-transparent hover:bg-white hover:shadow-sm rounded-lg cursor-pointer transition-all group border border-transparent hover:border-gray-200 w-full text-left"
+                    >
+                      <div className="flex items-center gap-3">
+                        <Folder className="w-4 h-4 text-gray-400 group-hover:text-gray-600 transition-colors" />
+                        <span className="text-sm text-gray-800 font-medium">{workspace.name}</span>
+                      </div>
+                      <span className="text-[11px] text-gray-400">
+                        {formatRelativeTime(workspace.updatedAt)}
+                      </span>
+                    </button>
+                  ))}
+                </>
               )}
             </div>
+            {filteredWorkspaces.length > defaultCount && (
+              <button 
+                onClick={() => setIsWorkspacesExpanded(!isWorkspacesExpanded)}
+                className="mt-2 w-full text-left pl-2 py-1.5 text-xs font-medium text-gray-400 hover:text-gray-700 hover:bg-gray-50 rounded transition-colors"
+              >
+                {isWorkspacesExpanded ? "Show less" : `View all ${filteredWorkspaces.length} workspaces`}
+              </button>
+            )}
           </section>
 
           <section>
             <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">RECENT FILES</h2>
-            <div className="flex flex-col gap-1">
-              {quickReadWorkspaces.length === 0 ? (
-                <p className="text-sm text-gray-500 italic">No recent files.</p>
+            <div className={`flex flex-col gap-1 transition-all duration-300 ${isFilesExpanded ? 'max-h-[50vh] overflow-y-auto custom-scrollbar pr-2' : 'overflow-hidden'}`}>
+              {filteredFiles.length === 0 ? (
+                <div className="py-6 text-center text-sm text-gray-400">
+                  {searchQuery ? `No files found matching "${searchQuery}"` : "No recent files."}
+                </div>
               ) : (
-                quickReadWorkspaces.map((workspace) => (
-                  <button 
-                    key={workspace.id}
-                    onClick={() => switchWorkspace(workspace.id)}
-                    className="flex items-center gap-2 p-2 hover:bg-white hover:shadow-sm rounded-md text-sm text-gray-700 cursor-pointer group transition-all"
-                  >
-                    <FileText className="w-3.5 h-3.5 text-gray-400 group-hover:text-gray-600" />
-                    <span className="truncate flex-1">{workspace.name}</span>
-                    <span className="text-[10px] text-gray-400 ml-auto opacity-0 group-hover:opacity-100 transition-opacity">
-                      {formatRelativeTime(workspace.updatedAt)}
-                    </span>
-                  </button>
-                ))
+                <>
+                  {displayFiles.map((workspace) => (
+                    <button 
+                      key={workspace.id}
+                      onClick={() => switchWorkspace(workspace.id)}
+                      className="flex items-center gap-2 p-2 hover:bg-white hover:shadow-sm rounded-md text-sm text-gray-700 cursor-pointer group transition-all"
+                    >
+                      <FileText className="w-3.5 h-3.5 text-gray-400 group-hover:text-gray-600" />
+                      <span className="truncate flex-1">{workspace.name}</span>
+                      <span className="text-[10px] text-gray-400 ml-auto opacity-0 group-hover:opacity-100 transition-opacity">
+                        {formatRelativeTime(workspace.updatedAt)}
+                      </span>
+                    </button>
+                  ))}
+                </>
               )}
             </div>
+            {filteredFiles.length > defaultCount && (
+              <button 
+                onClick={() => setIsFilesExpanded(!isFilesExpanded)}
+                className="mt-2 w-full text-left pl-2 py-1.5 text-xs font-medium text-gray-400 hover:text-gray-700 hover:bg-gray-50 rounded transition-colors"
+              >
+                {isFilesExpanded ? "Show less" : `View all ${filteredFiles.length} files`}
+              </button>
+            )}
           </section>
         </div>
       </div>

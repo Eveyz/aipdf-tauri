@@ -15,6 +15,7 @@ import {
   Loader2,
   Wand2,
   Check,
+  Circle,
 } from "lucide-react"
 import ReactMarkdown from "react-markdown"
 import { useAi } from "../hooks/useAi"
@@ -140,38 +141,30 @@ export function ChatPanel() {
   const [input, setInput] = useState("")
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null)
   const [editName, setEditName] = useState("")
-  const scrollRef = useRef<HTMLDivElement>(null)
+  const [isSessionsExpanded, setIsSessionsExpanded] = useState(false)
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+
+  const displaySessions = isSessionsExpanded ? sessions : sessions.slice(0, 3)
+
+  const scrollToBottom = (behavior: ScrollBehavior = "auto") => {
+    messagesEndRef.current?.scrollIntoView({ behavior })
+  }
+
+  // Auto-scroll to bottom
+  useEffect(() => {
+    scrollToBottom()
+  }, [chatMessages, streamingToken])
+
+  // Scroll to bottom when session becomes active
+  useEffect(() => {
+    if (activeSessionId) {
+      // Small timeout to ensure DOM has rendered
+      const timer = setTimeout(() => scrollToBottom(), 50)
+      return () => clearTimeout(timer)
+    }
+  }, [activeSessionId])
 
   // Auto-generate title for new sessions
-  useEffect(() => {
-    if (chatMessages.length === 2 && !isGenerating && activeSessionId) {
-      const firstUserMsg = chatMessages[0]
-      const firstAiMsg = chatMessages[1]
-      
-      if (firstUserMsg.role === "user" && firstAiMsg.role === "assistant") {
-        const session = sessions.find(s => s.id === activeSessionId)
-        // Only auto-generate if the name is still the default "Chat X"
-        if (session && /^Chat \d+$/.test(session.name)) {
-          const words = firstUserMsg.content.trim().split(/\s+/).slice(0, 4)
-          let newTitle = words.join(" ")
-          if (firstUserMsg.content.trim().split(/\s+/).length > 4) {
-            newTitle += "..."
-          }
-          
-          if (newTitle) {
-            // TODO: Replace with actual LLM API call to summarize title
-            renameSession(activeSessionId, newTitle)
-          }
-        }
-      }
-    }
-  }, [chatMessages, isGenerating, activeSessionId, sessions, renameSession])
-
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
-    }
-  }, [chatMessages, streamingToken])
 
   async function handleSend() {
     const prompt = input.trim()
@@ -191,14 +184,6 @@ export function ChatPanel() {
 
       // Capture current contexts before clearing
       const contexts = chatContexts.length > 0 ? [...chatContexts] : undefined
-      const context = contexts
-        ? contexts
-            .map((c) => {
-              if (c.label) return `${c.label}:\n${c.content}`
-              return c.content
-            })
-            .join("\n\n")
-        : undefined
 
       // Add user message with contexts
       const { addChatMessage } = useStore.getState()
@@ -206,7 +191,7 @@ export function ChatPanel() {
       clearChatContexts()
 
       // Generate AI response
-      await generate(prompt, context)
+      await generate(prompt, contexts)
     } catch (err) {
       console.error("Failed to send message:", err)
       alert("Error: " + (err instanceof Error ? err.message : String(err)))
@@ -221,7 +206,7 @@ export function ChatPanel() {
       // Remove messages after index
       const { setChatMessages } = useStore.getState()
       setChatMessages(messages)
-      await generate(lastUserMsg.content)
+      await generate(lastUserMsg.content, lastUserMsg.contexts)
     }
   }
 
@@ -301,26 +286,37 @@ export function ChatPanel() {
       {/* Sessions list */}
       {showSessions && (
         <div className="shrink-0 border-b bg-gray-50/30">
-          <ScrollArea className="max-h-[114px]">
-            <div className="py-1">
-              {sessions.length === 0 ? (
-                <p className="px-3 py-2 text-xs font-normal text-muted-foreground italic">No sessions in this workspace</p>
-              ) : (
-                sessions.map((session) => (
-                  <div
-                    key={session.id}
-                    className={`group relative flex items-center gap-2 px-3 py-2 text-xs cursor-pointer border border-transparent transition-all rounded-md mx-1 overflow-hidden hover:bg-gray-100 ${
-                      session.id === activeSessionId ? "bg-white shadow-sm ring-1 ring-black/5 font-medium" : "font-normal text-gray-600 hover:text-gray-900"
-                    }`}
+          {/* Scrollable Wrapper */}
+          <div className={`flex flex-col gap-1 transition-all duration-300 py-1 ${
+            isSessionsExpanded 
+              ? 'max-h-[30vh] overflow-y-auto custom-scrollbar pr-1' 
+              : 'overflow-hidden'
+          }`}>
+            {sessions.length === 0 ? (
+              <p className="px-3 py-2 text-xs font-normal text-muted-foreground italic">No sessions in this workspace</p>
+            ) : (
+              displaySessions.map((session) => (
+                <div
+                  key={session.id}
+                  className={`group relative flex items-center px-0.5 rounded-lg transition-colors mx-1 border border-transparent ${
+                    session.id === activeSessionId ? "bg-gray-100 border-gray-200" : "hover:bg-gray-100"
+                  }`}
+                >
+                  {/* Selection Click Area - Sits behind everything */}
+                  <div 
+                    className="absolute inset-0 z-0 cursor-pointer"
                     onClick={() => switchSession(session.id)}
-                  >
-                    <MessageSquare className={`h-3.5 w-3.5 shrink-0 ${session.id === activeSessionId ? "text-primary" : "text-gray-400"}`} />
+                  />
+
+                  {/* Content Wrapper - Floating above the click area */}
+                  <div className="relative z-10 flex items-center gap-2 px-2 py-1 w-full min-w-0 pointer-events-none">
+                    <Circle className={`h-2 w-2 shrink-0 mt-[1px] ${session.id === activeSessionId ? "text-primary" : "text-gray-400"}`} />
                     
-                    <div className="min-w-0 flex-1 pr-14 relative">
+                    <div className="min-w-0 flex-1 pr-14">
                       {editingSessionId === session.id ? (
                         <input
                           autoFocus
-                          className="w-full bg-transparent text-xs font-normal outline-none border-b border-primary/30 pb-0.5"
+                          className="w-full bg-transparent text-[13px] font-medium outline-none border-b border-primary/30 pb-0.5 pointer-events-auto"
                           value={editName}
                           onChange={(e) => setEditName(e.target.value)}
                           onBlur={() => handleSaveRename(session.id)}
@@ -334,25 +330,29 @@ export function ChatPanel() {
                           onClick={(e) => e.stopPropagation()}
                         />
                       ) : (
-                        <span className="block truncate">
+                        <span className={`truncate text-xs font-medium ${session.id === activeSessionId ? "text-gray-900" : "text-gray-700"}`}>
                           {session.name}
                         </span>
                       )}
                     </div>
                     
-                    <div className={`absolute right-1.5 flex items-center gap-0.5 pl-2 transition-opacity duration-200 ${session.id === activeSessionId ? "bg-white" : "bg-gray-100"} ${editingSessionId === session.id ? "opacity-0" : "opacity-0 group-hover:opacity-100 focus-within:opacity-100"}`}>
+                    {/* Action Icons - Also floating above, needs pointer-events-auto */}
+                    <div 
+                      className={`absolute right-1 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity pointer-events-auto ${editingSessionId === session.id ? "hidden" : ""}`}
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       <button
-                        className="h-6 w-6 flex items-center justify-center rounded hover:bg-white hover:shadow-sm text-gray-400 hover:text-gray-900 transition-all"
+                        className="p-1 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
                         onClick={(e) => {
                           e.stopPropagation()
                           handleStartRename(session.id, session.name)
                         }}
                         title="Rename"
                       >
-                        <Pencil className="h-3 w-3" />
+                        <Pencil className="h-3.5 w-3.5" />
                       </button>
                       <button
-                        className="h-6 w-6 flex items-center justify-center rounded hover:bg-white hover:shadow-sm text-gray-400 hover:text-destructive transition-all"
+                        className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
                         onClick={(e) => {
                           e.stopPropagation()
                           if (confirm("Delete this session?")) {
@@ -361,26 +361,36 @@ export function ChatPanel() {
                         }}
                         title="Delete"
                       >
-                        <Trash2 className="h-3 w-3" />
+                        <Trash2 className="h-3.5 w-3.5" />
                       </button>
                     </div>
 
                     {!editingSessionId && (
-                      <span className="absolute right-3 text-[10px] text-gray-400 group-hover:opacity-0 transition-opacity">
+                      <span className="absolute right-2 text-[10px] text-gray-400 group-hover:opacity-0 transition-opacity">
                         {formatDate(session.updatedAt)}
                       </span>
                     )}
                   </div>
-                ))
-              )}
-            </div>
-          </ScrollArea>
+                </div>
+              ))
+            )}
+          </div>
+          
+          {/* Toggle Button - Kept outside scrollable wrapper */}
+          {sessions.length > 3 && (
+            <button 
+              onClick={() => setIsSessionsExpanded(!isSessionsExpanded)}
+              className="mt-1 mb-2 w-full text-left pl-4 py-1.5 text-xs font-medium text-gray-400 hover:text-gray-700 hover:bg-gray-100/50 rounded transition-colors"
+            >
+              {isSessionsExpanded ? "Show less" : `View all ${sessions.length} sessions`}
+            </button>
+          )}
         </div>
       )}
 
       {/* Chat messages */}
       <ScrollArea className="scrollbar-thin min-h-0 flex-1">
-        <div ref={scrollRef} className="flex flex-col gap-3 p-3">
+        <div className="flex flex-col gap-3 p-3">
           {!loadedModel && (
             <p className="text-center text-xs font-normal text-muted-foreground">
               Load a model from settings to start chatting
@@ -441,6 +451,9 @@ export function ChatPanel() {
               </div>
             </div>
           )}
+          
+          {/* Bottom marker for auto-scrolling */}
+          <div ref={messagesEndRef} className="h-0" />
         </div>
       </ScrollArea>
 

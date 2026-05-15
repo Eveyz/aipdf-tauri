@@ -87,7 +87,41 @@ export interface ChatSession {
   updatedAt: number
 }
 
-const CLOUD_MODELS_STORAGE_KEY = "aipdf-cloud-models"
+export interface HighlightPosition {
+  boundingRect: {
+    x1: number
+    y1: number
+    x2: number
+    y2: number
+    width: number
+    height: number
+    pageNumber?: number
+  }
+  rects: Array<{
+    x1: number
+    y1: number
+    x2: number
+    y2: number
+    width: number
+    height: number
+    pageNumber?: number
+  }>
+  pageNumber: number
+}
+
+export interface Highlight {
+  id: string
+  documentPath: string
+  content: {
+    text?: string
+    image?: string
+  }
+  position: HighlightPosition
+  comment?: {
+    text: string
+    emoji: string
+  }
+}
 
 interface AppState {
   // Workspaces
@@ -101,6 +135,7 @@ interface AppState {
   renderedPages: Record<number, string> // page -> base64 image
   renderedPageDims: Record<number, { width: number; height: number }>
   zoom: number
+  highlights: Highlight[]
 
   // AI
   loadedModel: ModelInfo | null
@@ -136,6 +171,9 @@ interface AppState {
   setRenderedPage: (page: number, base64: string) => void
   setRenderedPageDim: (page: number, width: number, height: number) => void
   setZoom: (zoom: number) => void
+  addHighlight: (highlight: Highlight) => void
+  clearHighlights: () => void
+  deleteHighlight: (id: string) => void
   setLoadedModel: (model: ModelInfo | null) => void
   setIsGenerating: (generating: boolean) => void
   addChatMessage: (message: ChatMessage) => void
@@ -153,7 +191,7 @@ interface AppState {
   addCloudModel: (model: CloudModelEntry) => Promise<void>
   updateCloudModel: (model: CloudModelEntry) => Promise<void>
   deleteCloudModel: (id: string) => Promise<void>
-  createSession: () => Promise<void>
+  createSession: () => Promise<string | null>
   switchSession: (id: string) => Promise<void>
   deleteSession: (id: string) => Promise<void>
   renameSession: (id: string, name: string) => Promise<void>
@@ -174,6 +212,7 @@ export const useStore = create<AppState>((set, get) => ({
   renderedPages: {},
   renderedPageDims: {},
   zoom: 1.0,
+  highlights: [],
 
   // AI
   loadedModel: null,
@@ -421,6 +460,9 @@ switchWorkspace: async (id) => {
       renderedPageDims: { ...state.renderedPageDims, [page]: { width, height } },
     })),
   setZoom: (zoom) => set({ zoom, renderedPages: {}, renderedPageDims: {} }),
+  addHighlight: (highlight) => set((state) => ({ highlights: [...state.highlights, highlight] })),
+  clearHighlights: () => set({ highlights: [] }),
+  deleteHighlight: (id) => set((state) => ({ highlights: state.highlights.filter(h => h.id !== id) })),
   setLoadedModel: (model) => {
     set({ loadedModel: model })
     if (model) {

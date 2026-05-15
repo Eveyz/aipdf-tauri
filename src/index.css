@@ -129,21 +129,27 @@
   }
 }
 
-.pdf-text-layer {
-  color: transparent;
-}
-
-.pdf-text-line {
-  -webkit-text-fill-color: transparent;
-}
-
-.pdf-text-line::selection {
-  background: rgb(147 197 253 / 0.45);
-  color: transparent;
-  -webkit-text-fill-color: transparent;
+/* react-pdf-highlighter custom highlight styling */
+.Highlight__part {
+  background-color: rgba(59, 130, 246, 0.2) !important; /* Subtle blue */
+  border-bottom: 1px solid rgba(59, 130, 246, 0.4);
 }
 
 /* Minimalist scrollbar: 4px, transparent track, subtle thumb */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: oklch(0.88 0 0);
+  border-radius: 9999px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: oklch(0.82 0 0);
+}
+
 .scrollbar-thin [data-radix-scroll-area-viewport] {
   scrollbar-width: thin;
   scrollbar-color: transparent transparent;
