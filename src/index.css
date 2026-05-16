@@ -185,3 +185,9 @@
 .scrollbar-thin > [data-radix-scroll-area-scrollbar] {
   display: none;
 }
+
+/* Add border and shadow to PDF pages for better visibility when zoomed out */
+.pdfViewer .page {
+  border: 1px solid rgba(0, 0, 0, 0.15) !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08) !important;
+}

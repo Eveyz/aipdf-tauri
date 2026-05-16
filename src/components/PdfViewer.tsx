@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useState, useRef } from "react"
 import { open } from "@tauri-apps/plugin-dialog"
 import { Plus, FilePlus, Loader2, AlertCircle, Edit2, Languages } from "lucide-react"
 import { usePdf } from "../hooks/usePdf"
@@ -184,8 +184,38 @@ export function PdfViewer() {
     activeWorkspaceId,
     highlights,
     addHighlight,
-    lastPdfPath
+    lastPdfPath,
+    currentPage,
+    setCurrentPage,
+    zoom
   } = useStore()
+
+  const highlighterRef = useRef<any>(null)
+
+  const handleScroll = () => {
+    resetHash()
+    if (highlighterRef.current?.viewer) {
+      const pageNum = highlighterRef.current.viewer.currentPageNumber
+      if (pageNum && pageNum - 1 !== currentPage) {
+        setCurrentPage(pageNum - 1)
+      }
+    }
+  }
+
+  useEffect(() => {
+    if (highlighterRef.current?.viewer) {
+      const viewerPage = highlighterRef.current.viewer.currentPageNumber
+      if (viewerPage && viewerPage - 1 !== currentPage) {
+        highlighterRef.current.viewer.currentPageNumber = currentPage + 1
+      }
+    }
+  }, [currentPage])
+
+  useEffect(() => {
+    if (highlighterRef.current?.viewer) {
+      highlighterRef.current.viewer.currentScaleValue = zoom.toString()
+    }
+  }, [zoom])
 
   const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId)
   const isQuickRead = activeWorkspace?.type === "quick_read"
@@ -327,9 +357,11 @@ export function PdfViewer() {
               {(pdfDocument) => (
                 <div className="h-full w-full relative">
                   <PdfHighlighter
+                    ref={highlighterRef}
                     pdfDocument={pdfDocument}
+                    pdfScaleValue={zoom.toString()}
                     enableAreaSelection={(event) => event.altKey}
-                    onScrollChange={resetHash}
+                    onScrollChange={handleScroll}
                     scrollRef={() => {}}
                     onSelectionFinished={(
                       position,

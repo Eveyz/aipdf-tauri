@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react"
 import {
   ChevronLeft,
   ChevronRight,
@@ -41,6 +42,28 @@ export function Toolbar() {
 
   const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId)
   const isQuickRead = activeWorkspace?.type === "quick_read"
+
+  const [pageInput, setPageInput] = useState((currentPage + 1).toString())
+
+  useEffect(() => {
+    setPageInput((currentPage + 1).toString())
+  }, [currentPage])
+
+  const handlePageInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setPageInput(e.target.value)
+    if (e.target.value !== "") {
+      const page = parseInt(e.target.value, 10)
+      if (!isNaN(page)) {
+        goToPage(page - 1)
+      }
+    }
+  }
+
+  const handlePageInputBlur = () => {
+    if (pageInput === "" || isNaN(parseInt(pageInput, 10))) {
+      setPageInput((currentPage + 1).toString())
+    }
+  }
 
   function handleZoomIn() {
     setZoom(Math.min(zoom + 0.25, 4))
@@ -115,8 +138,9 @@ export function Toolbar() {
                 type="number"
                 min={1}
                 max={pdfInfo.pageCount}
-                value={currentPage + 1}
-                onChange={(e) => goToPage(parseInt(e.target.value, 10) - 1)}
+                value={pageInput}
+                onChange={handlePageInputChange}
+                onBlur={handlePageInputBlur}
               />
               <span className="text-muted-foreground">/ {pdfInfo.pageCount}</span>
             </div>
