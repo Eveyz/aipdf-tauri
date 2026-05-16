@@ -24,7 +24,7 @@ base64 = "0.22"
 thiserror = "2"
 tokio = { version = "1", features = ["full"] }
 dirs = "6"
-ort = { version = "2.0.0-rc.12", features = ["download-binaries", "load-dynamic"] }
+ort = { version = "2.0.0-rc.12", features = ["download-binaries", "load-dynamic", "ndarray"] }
 tokenizers = "0.21"
 futures = "0.3"
 uuid = { version = "1", features = ["v4"] }
@@ -33,3 +33,4 @@ png = "0.17"
 rusqlite = { version = "0.32", features = ["bundled"] }
 chrono = { version = "0.4", features = ["serde"] }
 futures-util = "0.3"
+ndarray = "0.17"

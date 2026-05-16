@@ -7,6 +7,7 @@ import { DocumentSidebar } from "./components/DocumentSidebar"
 import { ChatPanel } from "./components/ChatPanel"
 import { ModelManager } from "./components/ModelManager"
 import { WelcomeScreen } from "./components/WelcomeScreen"
+import { PdfMindmapModal } from "./components/PdfMindmapModal"
 import { usePdf } from "./hooks/usePdf"
 
 function App() {
@@ -36,8 +37,19 @@ function App() {
     }
   }, [activeWorkspaceId, documents, pdfInfo, openPdf, activeWorkspace?.type, activeWorkspace?.lastDocPath])
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'm') {
+        e.preventDefault()
+        useStore.getState().setMindmapOpen(!useStore.getState().mindmapOpen)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
+
   return (
-    <div className="flex h-screen min-w-0 flex-col overflow-hidden">
+    <div className="flex h-screen min-w-0 flex-col overflow-hidden relative">
       <Toolbar />
 
       <div className="min-h-0 flex-1 overflow-hidden">
@@ -90,6 +102,7 @@ function App() {
       </div>
 
       <ModelManager />
+      <PdfMindmapModal />
     </div>
   )
 }

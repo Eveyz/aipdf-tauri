@@ -11,6 +11,7 @@ import {
   RotateCcw,
   Home,
   FolderPlus,
+  Network,
 } from "lucide-react"
 import { usePdf } from "../hooks/usePdf"
 import { useStore } from "../store"
@@ -38,6 +39,8 @@ export function Toolbar() {
     workspaces,
     activeWorkspaceId,
     upgradeWorkspace,
+    mindmapOpen,
+    setMindmapOpen,
   } = useStore()
 
   const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId)
@@ -206,6 +209,23 @@ export function Toolbar() {
         )}
 
         <div className="flex-1" />
+
+        {/* Mindmap */}
+        {pdfInfo && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                className={`w-7 h-7 flex items-center justify-center rounded-md transition-colors mr-2 ${
+                  mindmapOpen ? "bg-blue-100 text-blue-600" : "text-gray-600 hover:bg-gray-100"
+                }`}
+                onClick={() => setMindmapOpen(!mindmapOpen)}
+              >
+                <Network className="w-4 h-4" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>Mindmap (Cmd/Ctrl+M)</TooltipContent>
+          </Tooltip>
+        )}
 
         {/* Toggle panels */}
         <Tooltip>

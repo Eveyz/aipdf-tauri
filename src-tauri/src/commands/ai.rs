@@ -161,14 +161,17 @@ pub async fn generate(
     contexts: Option<Vec<ChatContext>>,
     max_tokens: Option<usize>,
     temperature: Option<f32>,
+    persist: bool,
 ) -> Result<(), CommandError> {
     let cancel_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
 
     let contexts_json = contexts.as_ref().map(|c| serde_json::to_string(c).unwrap_or_default());
 
-    // Store user message
-    state.db.add_message(&session_id, "user", &prompt, contexts_json.as_deref())
-        .map_err(|e| CommandError::Ai(e.to_string()))?;
+    // Store user message if persist is true
+    if persist {
+        state.db.add_message(&session_id, "user", &prompt, contexts_json.as_deref())
+            .map_err(|e| CommandError::Ai(e.to_string()))?;
+    }
 
     {
         let mut ai = state.ai.lock().map_err(|e| CommandError::Ai(e.to_string()))?;
@@ -184,11 +187,95 @@ pub async fn generate(
 
     tokio::task::spawn_blocking(move || {
         let result = (|| -> Result<(), CommandError> {
+            let state = app.state::<AppState>();
+            let mut ai_guard = state.ai.lock().map_err(|e| CommandError::Ai(e.to_string()))?;
+            
+            if ai_guard.session.is_none() || ai_guard.tokenizer.is_none() {
+                return Err(CommandError::Ai("No session or tokenizer".into()));
+            }
+
+            let mut token_ids = ai_guard.tokenizer.as_ref().unwrap().encode(&prompt)
+                .map_err(|e| CommandError::Ai(format!("Tokenization error: {}", e)))?;
+
+            let eos_token_id = ai_guard.tokenizer.as_ref().unwrap().eos_token_id().unwrap_or(2);
+            let mut full_response = String::new();
+
+            for _ in 0.._max_tokens {
+                if cancel_flag.load(std::sync::atomic::Ordering::Relaxed) {
+                    break;
+                }
+
+                // Prepare inputs for ONNX session
+                let input_ids_vec: Vec<i64> = token_ids.clone();
+                let array = ndarray::Array2::from_shape_vec((1, input_ids_vec.len()), input_ids_vec)
+                    .map_err(|e| CommandError::Ai(format!("Array error: {}", e)))?;
+                
+                let input_ids = ort::value::Tensor::from_array(array)
+                    .map_err(|e| CommandError::Ai(format!("Tensor error: {}", e)))?;
+
+                // Run inference
+                let inputs = ort::inputs!["input_ids" => input_ids];
+                
+                // Use as_mut() to satisfy borrow checker if run() needs it
+                let outputs = ai_guard.session.as_mut().unwrap().session.run(inputs)
+                    .map_err(|e| CommandError::Ai(format!("Inference error: {}", e)))?;
+                
+                let (shape, data) = outputs[0].try_extract_tensor::<f32>()
+                    .map_err(|e| CommandError::Ai(format!("Extract error: {}", e)))?;
+                
+                let shape_vec: Vec<usize> = shape.iter().map(|&x| x as usize).collect();
+                let logits = ndarray::ArrayViewD::from_shape(shape_vec, data)
+                    .map_err(|e| CommandError::Ai(format!("Reshape error: {}", e)))?
+                    .to_owned();
+
+                // Release borrow of session by dropping outputs
+                drop(outputs);
+
+                let seq_len = logits.shape()[1];
+                let last_token_logits = logits.slice(ndarray::s![0, seq_len - 1, ..]);
+
+                let mut best_token = 0;
+                let mut max_logit = f32::NEG_INFINITY;
+                for (i, &logit) in last_token_logits.iter().enumerate() {
+                    if logit > max_logit {
+                        max_logit = logit;
+                        best_token = i as i64;
+                    }
+                }
+
+                if best_token == eos_token_id {
+                    break;
+                }
+
+                token_ids.push(best_token);
+                
+                let new_text = ai_guard.tokenizer.as_ref().unwrap().decode(&[best_token])
+                    .map_err(|e| CommandError::Ai(format!("Decoding error: {}", e)))?;
+                
+                full_response.push_str(&new_text);
+
+                app.emit("ai-token", TokenPayload {
+                    token: new_text,
+                    token_id: best_token,
+                    is_final: false,
+                }).map_err(|e| CommandError::Ai(e.to_string()))?;
+            }
+
+            // Persist assistant response if persist is true
+            if persist {
+                state.db.add_message(&session_id, "assistant", &full_response, None)
+                    .map_err(|e| CommandError::Ai(e.to_string()))?;
+            }
+
             app.emit("ai-token", TokenPayload {
-                token: "AI inference not yet implemented for local models.".into(),
+                token: "".into(),
                 token_id: 0,
                 is_final: true,
             }).map_err(|e| CommandError::Ai(e.to_string()))?;
+            
+            ai_guard.is_generating = false;
+            ai_guard.cancel_flag = None;
+
             Ok(())
         })();
 
@@ -198,6 +285,10 @@ pub async fn generate(
                 token_id: -1,
                 is_final: true,
             });
+            if let Ok(mut ai) = app.state::<AppState>().ai.lock() {
+                ai.is_generating = false;
+                ai.cancel_flag = None;
+            }
         }
     });
 
@@ -297,11 +388,14 @@ pub async fn generate_cloud(
     contexts: Option<Vec<ChatContext>>,
     max_tokens: Option<usize>,
     temperature: Option<f32>,
+    persist: bool,
 ) -> Result<(), CommandError> {
-    if let Some(last_msg) = messages.last() {
-        if last_msg.role == "user" {
-            let contexts_json = contexts.as_ref().map(|c| serde_json::to_string(c).unwrap_or_default());
-            let _ = state.db.add_message(&session_id, "user", &last_msg.content, contexts_json.as_deref());
+    if persist {
+        if let Some(last_msg) = messages.last() {
+            if last_msg.role == "user" {
+                let contexts_json = contexts.as_ref().map(|c| serde_json::to_string(c).unwrap_or_default());
+                let _ = state.db.add_message(&session_id, "user", &last_msg.content, contexts_json.as_deref());
+            }
         }
     }
 
@@ -365,9 +459,11 @@ pub async fn generate_cloud(
             }
         }
 
-        // Persist AI response
-        let app_state = app.state::<AppState>();
-        let _ = app_state.db.add_message(&session_id, "assistant", &full_content, None);
+        // Persist AI response if persist is true
+        if persist {
+            let app_state = app.state::<AppState>();
+            let _ = app_state.db.add_message(&session_id, "assistant", &full_content, None);
+        }
 
         let _ = app.emit("ai-token", TokenPayload {
             token: "".into(),

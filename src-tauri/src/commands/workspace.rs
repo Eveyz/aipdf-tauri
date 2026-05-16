@@ -1,7 +1,7 @@
 use tauri::State;
 use crate::state::AppState;
 use crate::commands::CommandError;
-use crate::db::{DbWorkspace, DbDocument};
+use crate::db::{DbWorkspace, DbDocument, DbHighlight};
 
 #[tauri::command]
 pub async fn create_workspace(state: State<'_, AppState>, name: String, metadata: Option<String>) -> Result<DbWorkspace, CommandError> {
@@ -41,4 +41,19 @@ pub async fn add_document(state: State<'_, AppState>, workspace_id: String, path
 #[tauri::command]
 pub async fn get_documents(state: State<'_, AppState>, workspace_id: String) -> Result<Vec<DbDocument>, CommandError> {
     state.db.get_documents(&workspace_id).map_err(|e| CommandError::Ai(e.to_string()))
+}
+
+#[tauri::command]
+pub async fn add_highlight(state: State<'_, AppState>, id: String, workspace_id: String, document_path: String, highlight_data: String) -> Result<DbHighlight, CommandError> {
+    state.db.add_highlight(&id, &workspace_id, &document_path, &highlight_data).map_err(|e| CommandError::Ai(e.to_string()))
+}
+
+#[tauri::command]
+pub async fn get_highlights(state: State<'_, AppState>, workspace_id: String) -> Result<Vec<DbHighlight>, CommandError> {
+    state.db.get_highlights(&workspace_id).map_err(|e| CommandError::Ai(e.to_string()))
+}
+
+#[tauri::command]
+pub async fn delete_highlight(state: State<'_, AppState>, id: String) -> Result<(), CommandError> {
+    state.db.delete_highlight(&id).map_err(|e| CommandError::Ai(e.to_string()))
 }

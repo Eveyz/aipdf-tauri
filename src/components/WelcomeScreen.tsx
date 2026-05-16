@@ -45,6 +45,31 @@ export function WelcomeScreen() {
 
         if (existingWs) {
           // If it exists, just switch to it and open the PDF
+          const isMissing = !useStore.getState().workspaces.find(w => w.id === existingWs.id)
+          if (isMissing) {
+            let type: "standard" | "quick_read" = "quick_read"
+            let lastDocPath: string | undefined = undefined
+            let lastPages: Record<string, number> | undefined = undefined
+            if (existingWs.metadata) {
+              try {
+                const meta = JSON.parse(existingWs.metadata)
+                type = meta.type || "quick_read"
+                lastDocPath = meta.lastDocPath
+                lastPages = meta.lastPages
+              } catch (e) {}
+            }
+            useStore.setState(state => ({
+              workspaces: [{
+                id: existingWs.id,
+                name: existingWs.name,
+                type,
+                lastDocPath,
+                lastPages,
+                createdAt: existingWs.created_at,
+                updatedAt: Date.now()
+              }, ...state.workspaces]
+            }))
+          }
           await switchWorkspace(existingWs.id)
           await openPdf(path)
         } else {

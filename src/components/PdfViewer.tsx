@@ -11,7 +11,6 @@ import {
   PdfLoader,
   PdfHighlighter,
   Highlight as PdfHighlight,
-  Popup,
   AreaHighlight,
 } from "react-pdf-highlighter"
 
@@ -28,6 +27,10 @@ const getNextId = () => crypto.randomUUID()
 const resetHash = () => {
   window.location.hash = ""
 }
+
+import { useAi } from "../hooks/useAi"
+
+import ReactMarkdown from "react-markdown"
 
 interface TooltipFormProps {
   content: { text?: string; image?: string }
@@ -48,55 +51,117 @@ function TooltipForm({
 }: TooltipFormProps) {
   const [mode, setMode] = useState<"menu" | "note" | "translate">("menu")
   const [noteText, setNoteText] = useState("")
+  const [translation, setTranslation] = useState<string>("")
+  const [isTranslating, setIsTranslating] = useState(false)
+  const [targetLang, setTargetLang] = useState("English")
+  const { translateText, loadedModel } = useAi()
+
+  const handleTranslate = async (lang: string) => {
+    if (!content.text) return
+    setTargetLang(lang)
+    setMode("translate")
+    setIsTranslating(true)
+    setTranslation("")
+    
+    try {
+      const result = await translateText(content.text, lang)
+      setTranslation(result)
+    } catch (e) {
+      console.error("Translation failed:", e)
+      const errorMsg = e instanceof Error ? e.message : "Translation failed. Check if a model is loaded."
+      setTranslation(errorMsg)
+    } finally {
+      setIsTranslating(false)
+    }
+  }
 
   if (mode === "translate") {
+    const isSingleWord = content.text?.trim().split(/\s+/).length === 1
+
     return (
       <div 
         onMouseOver={() => transformSelection()}
-        className="flex flex-col gap-3 p-4 bg-white border border-gray-200 rounded-xl shadow-2xl w-80 animate-in fade-in zoom-in duration-200"
+        className="flex flex-col bg-white/90 backdrop-blur-xl border border-gray-200/50 rounded-2xl shadow-2xl w-80 overflow-hidden animate-in fade-in zoom-in duration-200"
       >
-        <div className="flex items-center justify-between border-b border-gray-100 pb-2">
+        {/* MacOS Style Header */}
+        <div className="px-4 py-3 border-b border-gray-100/50 flex items-center justify-between bg-gray-50/50">
           <div className="flex items-center gap-2">
-            <Languages className="w-4 h-4 text-gray-500" />
-            <span className="text-sm font-medium text-gray-700">Translate to</span>
-            <select 
-              className="text-sm bg-gray-50 border border-gray-200 rounded px-2 py-1 outline-none focus:ring-1 focus:ring-gray-900"
-              defaultValue="en"
-            >
-              <option value="en">English</option>
-              <option value="zh">Chinese</option>
-              <option value="es">Spanish</option>
-              <option value="fr">French</option>
-              <option value="de">German</option>
-              <option value="ja">Japanese</option>
-            </select>
+            <Languages className="w-4 h-4 text-blue-500" />
+            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+              {isSingleWord ? "Dictionary Lookup" : "Translation"}
+            </span>
+          </div>
+          <select 
+            className="text-[11px] font-medium bg-transparent border-none outline-none text-blue-600 cursor-pointer"
+            value={targetLang}
+            onChange={(e) => handleTranslate(e.target.value)}
+          >
+            <option value="English">English</option>
+            <option value="Chinese">Chinese</option>
+            <option value="Spanish">Spanish</option>
+            <option value="French">French</option>
+            <option value="German">German</option>
+            <option value="Japanese">Japanese</option>
+          </select>
+        </div>
+
+        <div className="p-4 flex flex-col gap-4">
+          {/* Original Text */}
+          <div className="flex flex-col gap-1">
+            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-tight">Source</span>
+            <p className={cn(
+              "text-gray-900 font-medium leading-snug",
+              isSingleWord ? "text-xl font-serif" : "text-sm"
+            )}>
+              {content.text}
+            </p>
+          </div>
+
+          {/* Translation Result */}
+          <div className="flex flex-col gap-2">
+            <span className="text-[10px] font-bold text-blue-400 uppercase tracking-tight">Result</span>
+            <div className="max-h-52 overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-gray-200">
+              {isTranslating ? (
+                <div className="flex flex-col gap-2 animate-pulse">
+                  <div className="h-4 bg-gray-100 rounded w-3/4" />
+                  <div className="h-4 bg-gray-100 rounded w-1/2" />
+                  <div className="h-4 bg-gray-100 rounded w-2/3" />
+                </div>
+              ) : (
+                <div className={cn(
+                  "text-gray-700 leading-relaxed prose prose-sm prose-slate max-w-none",
+                  isSingleWord ? "text-sm" : "text-[13px]"
+                )}>
+                  {translation ? (
+                    <ReactMarkdown>{translation}</ReactMarkdown>
+                  ) : (
+                    <span className="text-gray-400 italic">No translation available. Check if a model is loaded.</span>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
-        <div className="bg-gray-50 rounded-lg p-3 max-h-32 overflow-y-auto">
-          <p className="text-sm text-gray-600 italic">
-            "{content.text}"
-          </p>
-        </div>
-
-        <div className="min-h-[80px] p-3 border border-gray-100 rounded-lg bg-blue-50/50">
-          <p className="text-sm text-gray-500 flex items-center gap-2">
-            <Loader2 className="w-4 h-4 animate-spin" /> 
-            Translating...
-          </p>
-        </div>
-
-        <div className="flex items-center justify-end gap-2 mt-1">
+        <div className="px-4 py-3 bg-gray-50/50 border-t border-gray-100/50 flex items-center justify-between">
+          {!loadedModel && (
+            <div className="flex items-center gap-1.5 text-[10px] text-amber-600 font-medium">
+              <AlertCircle className="w-3 h-3" />
+              Model required
+            </div>
+          )}
+          <div className="flex-1" />
           <button 
-            className="px-3 py-1.5 text-xs font-medium text-gray-500 hover:text-gray-700 transition-colors"
+            className="text-xs font-semibold text-blue-600 hover:text-blue-700 transition-colors"
             onClick={() => hideTipAndSelection()}
           >
-            Close
+            Done
           </button>
         </div>
       </div>
     )
   }
+
   if (mode === "note") {
     return (
       <div 
@@ -164,13 +229,85 @@ function TooltipForm({
       <div className="w-[1px] h-4 bg-gray-700 mx-1" />
       <button 
         className="px-3 py-1.5 text-[13px] text-white font-medium hover:bg-gray-800 rounded transition-colors flex items-center gap-1.5"
-        onClick={() => setMode("translate")}
+        onClick={() => handleTranslate("English")}
       >
         <Languages className="w-3.5 h-3.5"/>
         Translate
       </button>
     </div>
   )
+}
+
+import { OutlineItem } from "../store"
+
+function OutlineFetcher({ pdfDocument }: { pdfDocument: any }) {
+  const { setPdfOutline } = useStore()
+
+  useEffect(() => {
+    if (pdfDocument) {
+      let isMounted = true
+      async function fetchOutline() {
+        try {
+          const outline = await pdfDocument.getOutline()
+          if (!isMounted) return
+
+          if (!outline || outline.length === 0) {
+            setPdfOutline([])
+            return
+          }
+          
+          const parsedOutline: OutlineItem[] = []
+          
+          async function processItems(items: any[], level: number) {
+            for (const item of items) {
+              if (!isMounted) return
+
+              let pageIndex = -1
+              if (item.dest) {
+                let dest = item.dest
+                if (typeof dest === "string") {
+                  dest = await pdfDocument.getDestination(dest)
+                }
+                if (Array.isArray(dest) && dest[0]) {
+                  try {
+                    pageIndex = await pdfDocument.getPageIndex(dest[0])
+                  } catch (e) {
+                    console.warn("Failed to get page index for dest", dest, e)
+                  }
+                }
+              }
+              
+              if (pageIndex !== -1) {
+                parsedOutline.push({
+                  title: item.title,
+                  pageIndex,
+                  level
+                })
+              }
+              
+              if (item.items && item.items.length > 0) {
+                await processItems(item.items, level + 1)
+              }
+            }
+          }
+          
+          await processItems(outline, 1)
+          if (isMounted) {
+            setPdfOutline(parsedOutline)
+          }
+        } catch (e) {
+          console.error("Failed to fetch PDF outline:", e)
+        }
+      }
+      fetchOutline()
+
+      return () => {
+        isMounted = false
+      }
+    }
+  }, [pdfDocument])
+
+  return null
 }
 
 export function PdfViewer() {
@@ -357,7 +494,32 @@ export function PdfViewer() {
               {(pdfDocument) => (
                 <div className="h-full w-full relative">
                   <PdfHighlighter
-                    ref={highlighterRef}
+                    ref={(ref) => {
+                      highlighterRef.current = ref
+                      if (ref?.viewer?.eventBus) {
+                        const eventBus = ref.viewer.eventBus as any
+                        if (!eventBus._boundPageChanging) {
+                          eventBus._boundPageChanging = true
+                          eventBus.on("pagechanging", (evt: { pageNumber: number }) => {
+                            const newPage = evt.pageNumber - 1
+                            if (newPage !== useStore.getState().currentPage) {
+                              useStore.getState().setCurrentPage(newPage)
+                            }
+                          })
+                          eventBus.on("pagesinit", () => {
+                            const targetPage = useStore.getState().currentPage
+                            if (targetPage > 0 && ref.viewer) {
+                              // Wrap in setTimeout to ensure viewer is fully ready
+                              setTimeout(() => {
+                                if (ref.viewer) {
+                                  ref.viewer.currentPageNumber = targetPage + 1
+                                }
+                              }, 50)
+                            }
+                          })
+                        }
+                      }
+                    }}
                     pdfDocument={pdfDocument}
                     pdfScaleValue={zoom.toString()}
                     enableAreaSelection={(event) => event.altKey}
@@ -407,6 +569,7 @@ export function PdfViewer() {
                     }}
                     highlights={highlights.filter(h => h.documentPath === lastPdfPath) as IHighlight[]}
                   />
+                  <OutlineFetcher pdfDocument={pdfDocument} />
                 </div>
               )}
             </PdfLoader>

@@ -23,6 +23,15 @@ pub struct DbDocument {
     pub created_at: i64,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DbHighlight {
+    pub id: String,
+    pub workspace_id: String,
+    pub document_path: String,
+    pub highlight_data: String,
+    pub created_at: i64,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DbSession {
     pub id: String,
@@ -107,6 +116,16 @@ impl DbManager {
             let _ = conn.execute("ALTER TABLE workspaces ADD COLUMN metadata TEXT", []);
         }
 
+        // Retroactive fix for any existing workspaces with NULL metadata (due to previous migration or older versions)
+        let _ = conn.execute(
+            "UPDATE workspaces SET metadata = '{\"type\":\"quick_read\"}' WHERE metadata IS NULL AND name LIKE '%.pdf'",
+            [],
+        );
+        let _ = conn.execute(
+            "UPDATE workspaces SET metadata = '{\"type\":\"standard\"}' WHERE metadata IS NULL",
+            [],
+        );
+
         // Migration: Check if sessions table exists and has workspace_id
         let needs_migration = {
             let mut stmt = conn.prepare("PRAGMA table_info(sessions)")?;
@@ -180,6 +199,18 @@ impl DbManager {
             "CREATE TABLE IF NOT EXISTS settings (
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
+            )",
+            [],
+        )?;
+
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS highlights (
+                id TEXT PRIMARY KEY,
+                workspace_id TEXT NOT NULL,
+                document_path TEXT NOT NULL,
+                highlight_data TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                FOREIGN KEY(workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
             )",
             [],
         )?;
@@ -407,6 +438,51 @@ impl DbManager {
             docs.push(row?);
         }
         Ok(docs)
+    }
+
+    // Highlight methods
+    pub fn add_highlight(&self, id: &str, workspace_id: &str, document_path: &str, highlight_data: &str) -> Result<DbHighlight> {
+        let conn = self.conn.lock().unwrap();
+        let now = Utc::now().timestamp_millis();
+
+        conn.execute(
+            "INSERT INTO highlights (id, workspace_id, document_path, highlight_data, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![id, workspace_id, document_path, highlight_data, now],
+        )?;
+
+        Ok(DbHighlight {
+            id: id.to_string(),
+            workspace_id: workspace_id.to_string(),
+            document_path: document_path.to_string(),
+            highlight_data: highlight_data.to_string(),
+            created_at: now,
+        })
+    }
+
+    pub fn get_highlights(&self, workspace_id: &str) -> Result<Vec<DbHighlight>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT id, workspace_id, document_path, highlight_data, created_at FROM highlights WHERE workspace_id = ?1 ORDER BY created_at ASC")?;
+        let rows = stmt.query_map(params![workspace_id], |row| {
+            Ok(DbHighlight {
+                id: row.get(0)?,
+                workspace_id: row.get(1)?,
+                document_path: row.get(2)?,
+                highlight_data: row.get(3)?,
+                created_at: row.get(4)?,
+            })
+        })?;
+
+        let mut highlights = Vec::new();
+        for row in rows {
+            highlights.push(row?);
+        }
+        Ok(highlights)
+    }
+
+    pub fn delete_highlight(&self, id: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM highlights WHERE id = ?1", params![id])?;
+        Ok(())
     }
 
     // Session methods

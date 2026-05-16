@@ -1,5 +1,7 @@
 import { useState } from "react"
 import {
+  ChevronRight,
+  ChevronDown,
   FileText,
   Sparkles,
   Highlighter,
@@ -9,7 +11,7 @@ import {
   Trash2,
 } from "lucide-react"
 import { ScrollArea } from "./ui/scroll-area"
-import { useStore } from "../store"
+import { useStore, OutlineItem } from "../store"
 import { usePdf } from "../hooks/usePdf"
 import { cn } from "../lib/utils"
 
@@ -19,24 +21,6 @@ const TABS: { id: SidebarTab; label: string; icon: typeof FileText }[] = [
   { id: "outline", label: "Outline", icon: FileText },
   { id: "extraction", label: "Extraction", icon: Sparkles },
   { id: "highlights", label: "Highlights", icon: Highlighter },
-]
-
-// Mock outline data
-const MOCK_OUTLINE = [
-  { level: 1, title: "Preface", page: 1 },
-  { level: 1, title: "Introduction to the Field", page: 3 },
-  { level: 2, title: "Historical Context", page: 3 },
-  { level: 2, title: "Scope and Methodology", page: 5 },
-  { level: 1, title: "Core Concepts", page: 8 },
-  { level: 2, title: "Fundamental Theorems", page: 8 },
-  { level: 3, title: "The First Principle", page: 9 },
-  { level: 3, title: "Corollary 1.1", page: 11 },
-  { level: 2, title: "Mathematical Framework", page: 13 },
-  { level: 1, title: "Applications", page: 18 },
-  { level: 2, title: "Case Study: Financial Markets", page: 19 },
-  { level: 2, title: "Case Study: Signal Processing", page: 24 },
-  { level: 1, title: "Conclusion", page: 30 },
-  { level: 1, title: "References", page: 32 },
 ]
 
 // Mock extraction data
@@ -69,30 +53,71 @@ function PageTag({ page }: { page: number }) {
   )
 }
 
-function OutlineTab() {
+function OutlineItemRow({ item }: { item: OutlineItem }) {
   const { goToPage } = usePdf()
   const { currentPage } = useStore()
+  const [isOpen, setIsOpen] = useState(true)
+  const hasChildren = item.items && item.items.length > 0
+  const isActive = currentPage === item.pageIndex
 
-  if (MOCK_OUTLINE.length === 0) {
-    return <EmptyState icon={FileText} message="No outline available yet." />
+  return (
+    <div className="w-full">
+      <div
+        className={cn(
+          "flex items-center gap-0.5 group py-0.5 pr-4 transition-colors cursor-pointer hover:bg-gray-100/50 rounded-sm mx-1",
+          isActive && "bg-gray-100 text-gray-900 font-medium"
+        )}
+        style={{ paddingLeft: `${(item.level - 1) * 12 + 4}px` }}
+        onClick={() => goToPage(item.pageIndex)}
+      >
+        <div
+          onClick={(e) => {
+            e.stopPropagation()
+            if (hasChildren) setIsOpen(!isOpen)
+          }}
+          className={cn(
+            "p-1 rounded hover:bg-gray-200/50 transition-colors flex items-center justify-center shrink-0",
+            !hasChildren && "invisible"
+          )}
+        >
+          {isOpen ? (
+            <ChevronDown className="h-3 w-3 text-gray-400" />
+          ) : (
+            <ChevronRight className="h-3 w-3 text-gray-400" />
+          )}
+        </div>
+        <span
+          className={cn(
+            "flex-1 text-left truncate transition-colors",
+            item.level === 1 ? "text-[13px] text-gray-800" : "text-xs text-gray-600",
+            isActive && "text-gray-900"
+          )}
+        >
+          {item.title}
+        </span>
+      </div>
+      {hasChildren && isOpen && (
+        <div className="w-full">
+          {item.items.map((subItem, i) => (
+            <OutlineItemRow key={`${subItem.title}-${i}`} item={subItem} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function OutlineTab() {
+  const { pdfOutline } = useStore()
+
+  if (pdfOutline.length === 0) {
+    return <EmptyState icon={FileText} message="No outline available for this document." />
   }
 
   return (
     <div className="py-2">
-      {MOCK_OUTLINE.map((item, i) => (
-        <button
-          key={i}
-          onClick={() => goToPage(item.page - 1)}
-          className={cn(
-            "w-full text-left transition-colors cursor-pointer",
-            item.level === 1 && "text-sm text-gray-800 font-medium py-1.5 px-4",
-            item.level === 2 && "text-xs text-gray-500 hover:text-gray-900 py-1 pl-8 pr-4",
-            item.level === 3 && "text-xs text-gray-400 hover:text-gray-800 py-1 pl-12 pr-4",
-            currentPage === item.page - 1 && "text-gray-900 bg-gray-50"
-          )}
-        >
-          {item.title}
-        </button>
+      {pdfOutline.map((item, i) => (
+        <OutlineItemRow key={`${item.title}-${i}`} item={item} />
       ))}
     </div>
   )
@@ -159,7 +184,14 @@ function HighlightsTab() {
   const { goToPage } = usePdf()
   const { highlights, lastPdfPath, deleteHighlight } = useStore()
   
-  const docHighlights = highlights.filter(h => h.documentPath === lastPdfPath)
+  const docHighlights = [...highlights]
+    .filter(h => h.documentPath === lastPdfPath)
+    .sort((a, b) => {
+      if (a.position.pageNumber !== b.position.pageNumber) {
+        return a.position.pageNumber - b.position.pageNumber
+      }
+      return (a.position.boundingRect?.y1 || 0) - (b.position.boundingRect?.y1 || 0)
+    })
 
   if (docHighlights.length === 0) {
     return <EmptyState icon={Highlighter} message="No highlights saved yet. Select text in the PDF to add some." />
@@ -174,14 +206,28 @@ function HighlightsTab() {
         >
           <button
             onClick={() => goToPage(highlight.position.pageNumber - 1)}
-            className="w-full text-left relative p-3 bg-white border border-gray-150 rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.04)] hover:shadow-md transition-all cursor-pointer overflow-hidden pr-10"
+            className="w-full text-left relative p-3 bg-white border border-gray-150 rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.04)] hover:shadow-md transition-all cursor-pointer overflow-hidden pr-8"
           >
             <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-400" />
-            <p className="text-xs text-gray-700 leading-relaxed line-clamp-3">
-              {highlight.content.text || "Area highlight"}
+            <p className="text-xs text-gray-600 leading-relaxed line-clamp-3 mb-2 italic">
+              "{highlight.content.text || "Area highlight"}"
             </p>
+            {highlight.comment?.text && (
+              <div className="bg-yellow-50/50 p-2 rounded-md mb-2 border border-yellow-100/50">
+                <p className="text-xs text-gray-800 font-medium whitespace-pre-wrap">
+                  {highlight.comment.text}
+                </p>
+              </div>
+            )}
             <div className="flex items-center justify-between mt-2">
               <PageTag page={highlight.position.pageNumber} />
+              {highlight.createdAt && (
+                <span className="text-[10px] text-gray-400">
+                  {new Date(highlight.createdAt).toLocaleString(undefined, { 
+                    month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+                  })}
+                </span>
+              )}
             </div>
           </button>
           
@@ -190,7 +236,7 @@ function HighlightsTab() {
               e.stopPropagation()
               deleteHighlight(highlight.id)
             }}
-            className="absolute right-2 top-3 p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-md opacity-0 group-hover:opacity-100 transition-all"
+            className="absolute right-2 top-3 p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-md opacity-0 group-hover:opacity-100 transition-all z-10"
             title="Delete highlight"
           >
             <Trash2 className="h-3.5 w-3.5" />

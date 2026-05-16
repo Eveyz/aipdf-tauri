@@ -40,10 +40,15 @@ export function usePdf() {
       pageHeight: info.page_height,
     })
     
-    // Save last viewed path
-    const { setLastPdfPath, setWorkspaceLastDocPath } = useStore.getState()
+    const { setLastPdfPath, setWorkspaceLastDocPath, setCurrentPage } = useStore.getState()
     setLastPdfPath(path)
     await setWorkspaceLastDocPath(path)
+
+    const ws = useStore.getState().workspaces.find(w => w.id === useStore.getState().activeWorkspaceId)
+    if (ws?.lastPages && typeof ws.lastPages[path] === 'number') {
+      const savedPage = ws.lastPages[path]
+      setCurrentPage(Math.min(savedPage, info.page_count - 1))
+    }
 
     return info
   }

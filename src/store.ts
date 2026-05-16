@@ -66,6 +66,7 @@ export interface Workspace {
   name: string
   type: "standard" | "quick_read"
   lastDocPath?: string
+  lastPages?: Record<string, number>
   createdAt: number
   updatedAt: number
 }
@@ -121,6 +122,14 @@ export interface Highlight {
     text: string
     emoji: string
   }
+  createdAt?: number
+}
+
+export interface OutlineItem {
+  title: string
+  pageIndex: number
+  level: number
+  items?: OutlineItem[]
 }
 
 interface AppState {
@@ -136,10 +145,12 @@ interface AppState {
   renderedPageDims: Record<number, { width: number; height: number }>
   zoom: number
   highlights: Highlight[]
+  pdfOutline: OutlineItem[]
 
   // AI
   loadedModel: ModelInfo | null
   isGenerating: boolean
+  isTranslating: boolean
   chatMessages: ChatMessage[]
   streamingToken: string
   chatContexts: ChatContext[]
@@ -171,11 +182,13 @@ interface AppState {
   setRenderedPage: (page: number, base64: string) => void
   setRenderedPageDim: (page: number, width: number, height: number) => void
   setZoom: (zoom: number) => void
-  addHighlight: (highlight: Highlight) => void
+  addHighlight: (highlight: Highlight) => Promise<void>
   clearHighlights: () => void
-  deleteHighlight: (id: string) => void
+  deleteHighlight: (id: string) => Promise<void>
+  setPdfOutline: (outline: OutlineItem[]) => void
   setLoadedModel: (model: ModelInfo | null) => void
   setIsGenerating: (generating: boolean) => void
+  setIsTranslating: (translating: boolean) => void
   addChatMessage: (message: ChatMessage) => void
   setChatMessages: (messages: ChatMessage[]) => void
   clearChat: () => void
@@ -196,6 +209,8 @@ interface AppState {
   deleteSession: (id: string) => Promise<void>
   renameSession: (id: string, name: string) => Promise<void>
   setShowSessions: (show: boolean) => void
+  mindmapOpen: boolean
+  setMindmapOpen: (open: boolean) => void
 }
 
 import { invoke } from "@tauri-apps/api/core"
@@ -213,10 +228,12 @@ export const useStore = create<AppState>((set, get) => ({
   renderedPageDims: {},
   zoom: 1.0,
   highlights: [],
+  pdfOutline: [],
 
   // AI
   loadedModel: null,
   isGenerating: false,
+  isTranslating: false,
   chatMessages: [],
   streamingToken: "",
   chatContexts: [],
@@ -228,6 +245,7 @@ export const useStore = create<AppState>((set, get) => ({
   downloadProgress: null,
   cloudModels: [],
   lastPdfPath: null,
+  mindmapOpen: false,
 
   // Sessions
   sessions: [],
@@ -241,6 +259,7 @@ export const useStore = create<AppState>((set, get) => ({
       const mappedWorkspaces: Workspace[] = workspaces.map(w => {
         let type: "standard" | "quick_read" = "standard"
         let lastDocPath: string | undefined = undefined
+        let lastPages: Record<string, number> | undefined = undefined
         if (w.metadata) {
           try {
             const meta = JSON.parse(w.metadata)
@@ -248,6 +267,7 @@ export const useStore = create<AppState>((set, get) => ({
               type = meta.type
             }
             lastDocPath = meta.lastDocPath
+            lastPages = meta.lastPages
           } catch (e) {
             console.warn("Failed to parse workspace metadata:", e)
           }
@@ -257,6 +277,7 @@ export const useStore = create<AppState>((set, get) => ({
           name: w.name,
           type,
           lastDocPath,
+          lastPages,
           createdAt: w.created_at,
           updatedAt: w.updated_at
         }
@@ -334,6 +355,22 @@ export const useStore = create<AppState>((set, get) => ({
 switchWorkspace: async (id) => {
   const docs = await invoke<any[]>("get_documents", { workspaceId: id })
   const sessions = await invoke<any[]>("list_sessions", { workspaceId: id })
+  const highlightsDb = await invoke<any[]>("get_highlights", { workspaceId: id })
+
+  const highlights: Highlight[] = highlightsDb.map(h => {
+    try {
+      const data = JSON.parse(h.highlight_data)
+      return {
+        ...data,
+        id: h.id,
+        documentPath: h.document_path,
+        createdAt: h.created_at,
+      }
+    } catch (e) {
+      console.error("Failed to parse highlight:", e)
+      return null
+    }
+  }).filter(Boolean)
 
   invoke("set_setting", { key: "active_workspace_id", value: id }).catch(console.error)
   invoke("touch_workspace", { id }).catch(console.error)
@@ -361,6 +398,8 @@ switchWorkspace: async (id) => {
       activeSessionId: sessions[0]?.id || null,
       chatMessages: [], 
       pdfInfo: null, 
+      highlights,
+      pdfOutline: [],
     }))
 
     if (sessions[0]) {
@@ -382,7 +421,8 @@ switchWorkspace: async (id) => {
     const ws = get().workspaces.find(w => w.id === id)
     const newMetadata = JSON.stringify({ 
       type: "standard",
-      lastDocPath: ws?.lastDocPath 
+      lastDocPath: ws?.lastDocPath,
+      lastPages: ws?.lastPages
     })
 
     try {
@@ -410,7 +450,8 @@ switchWorkspace: async (id) => {
 
     const newMetadata = JSON.stringify({ 
       type: ws.type,
-      lastDocPath: path 
+      lastDocPath: path,
+      lastPages: ws.lastPages
     })
 
     try {
@@ -445,14 +486,46 @@ switchWorkspace: async (id) => {
     set(state => ({ documents: [...state.documents, newDoc] }))
   },
 
-  setPdfInfo: (info) => set({ pdfInfo: info, currentPage: 0, renderedPages: {} }),
+  setPdfInfo: (info) => set({ pdfInfo: info, currentPage: 0, renderedPages: {}, pdfOutline: [] }),
   setLastPdfPath: (path) => {
     set({ lastPdfPath: path })
     if (path) {
       invoke("set_setting", { key: "last_pdf_path", value: path }).catch(console.error)
     }
   },
-  setCurrentPage: (page) => set({ currentPage: page }),
+  setCurrentPage: (page) => {
+    set({ currentPage: page })
+
+    const { activeWorkspaceId, workspaces, lastPdfPath } = get()
+    if (!activeWorkspaceId || !lastPdfPath) return
+
+    const ws = workspaces.find(w => w.id === activeWorkspaceId)
+    if (!ws) return
+
+    const newLastPages = { ...(ws.lastPages || {}), [lastPdfPath]: page }
+
+    set(state => ({
+      workspaces: state.workspaces.map(w => 
+        w.id === activeWorkspaceId ? { ...w, lastPages: newLastPages } : w
+      )
+    }))
+
+    // Debounce the backend save using a global variable
+    clearTimeout((window as any)._savePageTimeout)
+    ;(window as any)._savePageTimeout = setTimeout(() => {
+      const currentWs = get().workspaces.find(w => w.id === activeWorkspaceId)
+      if (currentWs) {
+        invoke("update_workspace_metadata", { 
+          id: activeWorkspaceId, 
+          metadata: JSON.stringify({
+            type: currentWs.type,
+            lastDocPath: currentWs.lastDocPath,
+            lastPages: currentWs.lastPages
+          })
+        }).catch(console.error)
+      }
+    }, 1000)
+  },
   setRenderedPage: (page, base64) =>
     set((state) => ({ renderedPages: { ...state.renderedPages, [page]: base64 } })),
   setRenderedPageDim: (page, width, height) =>
@@ -460,9 +533,34 @@ switchWorkspace: async (id) => {
       renderedPageDims: { ...state.renderedPageDims, [page]: { width, height } },
     })),
   setZoom: (zoom) => set({ zoom, renderedPages: {}, renderedPageDims: {} }),
-  addHighlight: (highlight) => set((state) => ({ highlights: [...state.highlights, highlight] })),
+  addHighlight: async (highlight) => {
+    const wsId = get().activeWorkspaceId
+    if (!wsId) return
+
+    const highlightWithTime = { ...highlight, createdAt: Date.now() }
+    set((state) => ({ highlights: [...state.highlights, highlightWithTime] }))
+
+    try {
+      await invoke("add_highlight", {
+        id: highlightWithTime.id,
+        workspaceId: wsId,
+        documentPath: highlightWithTime.documentPath,
+        highlightData: JSON.stringify(highlightWithTime)
+      })
+    } catch (e) {
+      console.error("Failed to save highlight:", e)
+    }
+  },
   clearHighlights: () => set({ highlights: [] }),
-  deleteHighlight: (id) => set((state) => ({ highlights: state.highlights.filter(h => h.id !== id) })),
+  deleteHighlight: async (id) => {
+    set((state) => ({ highlights: state.highlights.filter(h => h.id !== id) }))
+    try {
+      await invoke("delete_highlight", { id })
+    } catch (e) {
+      console.error("Failed to delete highlight:", e)
+    }
+  },
+  setPdfOutline: (outline) => set({ pdfOutline: outline }),
   setLoadedModel: (model) => {
     set({ loadedModel: model })
     if (model) {
@@ -470,6 +568,7 @@ switchWorkspace: async (id) => {
     }
   },
   setIsGenerating: (generating) => set({ isGenerating: generating }),
+  setIsTranslating: (translating) => set({ isTranslating: translating }),
   addChatMessage: (message) =>
     set((state) => {
       // Deduplicate: skip if a message with this ID already exists
@@ -623,4 +722,5 @@ switchWorkspace: async (id) => {
     }
   },
   setShowSessions: (show) => set({ showSessions: show }),
+  setMindmapOpen: (open) => set({ mindmapOpen: open }),
 }))

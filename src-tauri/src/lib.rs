@@ -65,6 +65,9 @@ pub fn run() {
             commands::workspace::find_workspace_by_path,
             commands::workspace::add_document,
             commands::workspace::get_documents,
+            commands::workspace::add_highlight,
+            commands::workspace::get_highlights,
+            commands::workspace::delete_highlight,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
