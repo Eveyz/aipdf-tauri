@@ -185,6 +185,26 @@ pub async fn generate(
     let _max_tokens = max_tokens.unwrap_or(512);
     let _temperature = temperature.unwrap_or(0.7);
 
+    // Combine prompt and context for the model
+    let context_text = if let Some(ref contexts) = contexts {
+        contexts.iter()
+            .map(|c| if let Some(ref label) = c.label { format!("{}:\n{}", label, c.content) } else { c.content.clone() })
+            .collect::<Vec<_>>()
+            .join("\n\n")
+    } else {
+        String::new()
+    };
+
+    let system_prompt = "You are a helpful AI assistant analyzing a PDF document. Always format your responses in clear, professional Markdown. Use headings, lists, and bold text where appropriate to make your answers easy to read. Output ONLY raw Markdown text.";
+    
+    let prompt_for_model = if !context_text.is_empty() {
+        format!("Use this selected PDF context to answer the user's question.\n\nSelected context:\n{}\n\nUser question:\n{}\n\nRemember to format your entire response using structured Markdown.", context_text, prompt)
+    } else {
+        format!("{}\n\nRemember to format your entire response using structured Markdown.", prompt)
+    };
+    
+    let prompt_for_inference = format!("{}\n\nUser: {}", system_prompt, prompt_for_model);
+
     tokio::task::spawn_blocking(move || {
         let result = (|| -> Result<(), CommandError> {
             let state = app.state::<AppState>();
@@ -194,7 +214,7 @@ pub async fn generate(
                 return Err(CommandError::Ai("No session or tokenizer".into()));
             }
 
-            let mut token_ids = ai_guard.tokenizer.as_ref().unwrap().encode(&prompt)
+            let mut token_ids = ai_guard.tokenizer.as_ref().unwrap().encode(&prompt_for_inference)
                 .map_err(|e| CommandError::Ai(format!("Tokenization error: {}", e)))?;
 
             let eos_token_id = ai_guard.tokenizer.as_ref().unwrap().eos_token_id().unwrap_or(2);
@@ -384,18 +404,46 @@ pub async fn generate_cloud(
     base_url: String,
     api_key: String,
     model: String,
-    messages: Vec<ChatMessage>,
+    mut messages: Vec<ChatMessage>,
     contexts: Option<Vec<ChatContext>>,
     max_tokens: Option<usize>,
     temperature: Option<f32>,
     persist: bool,
 ) -> Result<(), CommandError> {
+    let system_prompt = "You are a helpful AI assistant analyzing a PDF document. Always format your responses in clear, professional Markdown. Use headings, lists, and bold text where appropriate to make your answers easy to read. Output ONLY raw Markdown text.";
+
     if persist {
         if let Some(last_msg) = messages.last() {
             if last_msg.role == "user" {
                 let contexts_json = contexts.as_ref().map(|c| serde_json::to_string(c).unwrap_or_default());
                 let _ = state.db.add_message(&session_id, "user", &last_msg.content, contexts_json.as_deref());
             }
+        }
+    }
+
+    // Enrich messages for the API call
+    if !messages.is_empty() && messages[0].role == "system" {
+        messages[0].content = system_prompt.to_string();
+    } else {
+        messages.insert(0, ChatMessage { role: "system".into(), content: system_prompt.into() });
+    }
+
+    // Enrich the last user message with context
+    let context_text = if let Some(ref contexts) = contexts {
+        contexts.iter()
+            .map(|c| if let Some(ref label) = c.label { format!("{}:\n{}", label, c.content) } else { c.content.clone() })
+            .collect::<Vec<_>>()
+            .join("\n\n")
+    } else {
+        String::new()
+    };
+
+    if let Some(last_user_msg) = messages.iter_mut().rev().find(|m| m.role == "user") {
+        let original_prompt = last_user_msg.content.clone();
+        if !context_text.is_empty() {
+            last_user_msg.content = format!("Use this selected PDF context to answer the user's question.\n\nSelected context:\n{}\n\nUser question:\n{}\n\nRemember to format your entire response using structured Markdown.", context_text, original_prompt);
+        } else {
+            last_user_msg.content = format!("{}\n\nRemember to format your entire response using structured Markdown.", original_prompt);
         }
     }
 

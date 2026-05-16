@@ -20,6 +20,7 @@ import {
 import ReactMarkdown from "react-markdown"
 import { useAi } from "../hooks/useAi"
 import { useStore, type ChatContext } from "../store"
+import { cn } from "../lib/utils"
 import { ScrollArea } from "./ui/scroll-area"
 import {
   Select,
@@ -30,13 +31,21 @@ import {
 } from "./ui/select"
 
 // Context pill for context display (file, page, text)
-function ContextPill({ ctx }: { ctx: ChatContext }) {
+function ContextPill({ ctx, onRemove }: { ctx: ChatContext, onRemove?: (id: string) => void }) {
   const iconChar = ctx.type === "file" ? "📁" : ctx.type === "page" ? "🔖" : "📝"
 
   return (
     <span className="flex items-center gap-1.5 px-2 py-1 bg-white border border-slate-200 rounded shadow-sm text-[11px] text-slate-600 font-mono max-w-[180px]">
       <span className="shrink-0">{iconChar}</span>
       <span className="truncate">{ctx.label || ctx.content}</span>
+      {onRemove && (
+        <button
+          onClick={() => onRemove(ctx.id)}
+          className="h-4 w-4 shrink-0 flex items-center justify-center rounded-full hover:bg-gray-100 hover:text-gray-900 cursor-pointer transition-colors ml-0.5"
+        >
+          <X className="h-2.5 w-2.5" />
+        </button>
+      )}
     </span>
   )
 }
@@ -46,25 +55,30 @@ function ThinkingIndicator({ isStreaming, isWaiting }: { isStreaming: boolean, i
   const [expanded, setExpanded] = useState(false)
 
   return (
-    <div className="mb-2">
+    <div className="mb-2 w-full min-w-0 overflow-hidden">
       <button
         onClick={() => setExpanded(!expanded)}
-        className={`flex items-center gap-2 text-xs text-gray-500 hover:text-gray-700 cursor-pointer transition-colors ${isWaiting ? "animate-pulse" : ""}`}
-      >
-        {isStreaming || isWaiting ? (
-          <Loader2 className="h-3 w-3 animate-spin" />
-        ) : (
-          <Wand2 className="h-3 w-3" />
+        className={cn(
+          "flex items-center gap-2 text-xs text-gray-500 hover:text-gray-700 cursor-pointer transition-colors w-full min-w-0",
+          isWaiting && "animate-pulse"
         )}
-        <span>{isStreaming || isWaiting ? "Thinking..." : "Analyzed context"}</span>
+      >
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          {isStreaming || isWaiting ? (
+            <Loader2 className="h-3 w-3 animate-spin shrink-0" />
+          ) : (
+            <Wand2 className="h-3 w-3 shrink-0" />
+          )}
+          <span className="truncate">{isStreaming || isWaiting ? "Thinking..." : "Analyzed context"}</span>
+        </div>
         {expanded ? (
-          <ChevronUp className="h-3 w-3 text-gray-400" />
+          <ChevronUp className="h-3 w-3 text-gray-400 shrink-0" />
         ) : (
-          <ChevronRight className="h-3 w-3 text-gray-400" />
+          <ChevronRight className="h-3 w-3 text-gray-400 shrink-0" />
         )}
       </button>
       {expanded && (
-        <div className="border-l-2 border-gray-200 pl-3 py-1 my-2 text-xs text-gray-500 italic leading-relaxed">
+        <div className="border-l-2 border-gray-200 pl-3 py-1 my-2 text-xs text-gray-500 italic leading-relaxed break-words">
           {isWaiting ? "Connecting to model..." : "Processing document context and formulating response..."}
         </div>
       )}
@@ -87,8 +101,8 @@ function ActionBar({ content, onRetry }: { content: string, onRetry?: () => void
   }
 
   return (
-    <div className="flex items-center justify-between mt-3 transition-opacity duration-200">
-      <div className="flex items-center gap-1">
+    <div className="flex items-center justify-between mt-3 transition-opacity duration-200 w-full min-w-0 gap-2">
+      <div className="flex items-center gap-1 shrink-0">
         <button
           onClick={onRetry}
           className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-md transition-colors cursor-pointer outline-none focus-visible:ring-1 focus-visible:ring-slate-200"
@@ -108,7 +122,7 @@ function ActionBar({ content, onRetry }: { content: string, onRetry?: () => void
           )}
         </button>
       </div>
-      <span className="text-[11px] text-gray-400 font-mono tracking-tight">
+      <span className="text-[10px] text-gray-400 font-mono tracking-tight truncate">
         mimo-v2.5-pro
       </span>
     </div>
@@ -260,12 +274,12 @@ export function ChatPanel() {
   }
 
   return (
-    <div className="flex h-full min-h-0 min-w-0 flex-col bg-white">
+    <div className="flex h-full w-full min-w-0 flex-col bg-white overflow-hidden max-w-full relative">
       {/* Header */}
-      <div className="flex shrink-0 items-center justify-between border-b px-3 py-1.5">
+      <div className="flex shrink-0 items-center justify-between border-b px-3 py-1.5 w-full overflow-hidden">
         <button
           onClick={() => setShowSessions(!showSessions)}
-          className="flex items-center gap-1 text-[11px] font-semibold text-gray-400 uppercase tracking-wider hover:text-gray-600 transition-colors"
+          className="flex items-center gap-1 text-[11px] font-semibold text-gray-400 uppercase tracking-wider hover:text-gray-600 transition-colors shrink-0"
         >
           {showSessions ? (
             <ChevronDown className="h-3 w-3" />
@@ -275,7 +289,7 @@ export function ChatPanel() {
           <span>Sessions</span>
         </button>
         <button
-          className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-gray-100 text-gray-600 transition-colors"
+          className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-gray-100 text-gray-600 transition-colors shrink-0"
           onClick={createSession}
           title="New session"
         >
@@ -285,9 +299,9 @@ export function ChatPanel() {
 
       {/* Sessions list */}
       {showSessions && (
-        <div className="shrink-0 border-b bg-gray-50/30">
+        <div className="shrink-0 border-b bg-gray-50/30 w-full overflow-hidden">
           {/* Scrollable Wrapper */}
-          <div className={`flex flex-col gap-1 transition-all duration-300 py-1 ${
+          <div className={`flex flex-col gap-1 transition-all duration-300 py-1 w-full ${
             isSessionsExpanded 
               ? 'max-h-[30vh] overflow-y-auto custom-scrollbar pr-1' 
               : 'overflow-hidden'
@@ -309,7 +323,7 @@ export function ChatPanel() {
                   />
 
                   {/* Content Wrapper - Floating above the click area */}
-                  <div className="relative z-10 flex items-center gap-2 px-2 py-1 w-full min-w-0 pointer-events-none">
+                  <div className="relative z-10 flex items-center gap-2 px-2 py-1 w-full min-w-0 pointer-events-none overflow-hidden">
                     <Circle className={`h-2 w-2 shrink-0 mt-[1px] ${session.id === activeSessionId ? "text-primary" : "text-gray-400"}`} />
                     
                     <div className="min-w-0 flex-1 pr-14">
@@ -330,7 +344,7 @@ export function ChatPanel() {
                           onClick={(e) => e.stopPropagation()}
                         />
                       ) : (
-                        <span className={`truncate text-xs font-medium ${session.id === activeSessionId ? "text-gray-900" : "text-gray-700"}`}>
+                        <span className={`truncate text-xs font-medium block ${session.id === activeSessionId ? "text-gray-900" : "text-gray-700"}`}>
                           {session.name}
                         </span>
                       )}
@@ -366,7 +380,7 @@ export function ChatPanel() {
                     </div>
 
                     {!editingSessionId && (
-                      <span className="absolute right-2 text-[10px] text-gray-400 group-hover:opacity-0 transition-opacity">
+                      <span className="absolute right-2 text-[10px] text-gray-400 group-hover:opacity-0 transition-opacity shrink-0">
                         {formatDate(session.updatedAt)}
                       </span>
                     )}
@@ -389,17 +403,17 @@ export function ChatPanel() {
       )}
 
       {/* Chat messages */}
-      <ScrollArea className="scrollbar-thin min-h-0 flex-1">
-        <div className="flex flex-col gap-3 p-3">
+      <ScrollArea className="scrollbar-thin min-h-0 flex-1 w-full overflow-hidden">
+        <div className="flex flex-col gap-6 py-4 w-full overflow-hidden">
           {!loadedModel && (
-            <p className="text-center text-xs font-normal text-muted-foreground">
+            <p className="text-center text-xs font-normal text-muted-foreground px-4">
               Load a model from settings to start chatting
             </p>
           )}
 
           {chatMessages.length === 0 && loadedModel && (
-            <div className="flex flex-col items-center justify-center gap-2 py-8 text-center">
-              <MessageSquare className="h-8 w-8 text-muted-foreground/40" />
+            <div className="flex flex-col items-center justify-center gap-2 py-8 text-center px-4">
+              <MessageSquare className="h-8 w-8 text-muted-foreground/40 shrink-0" />
               <p className="text-xs font-normal text-muted-foreground">
                 Ask about the PDF
               </p>
@@ -409,30 +423,35 @@ export function ChatPanel() {
           {chatMessages.map((msg, idx) => (
             <div
               key={msg.id}
-              className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+              className={cn(
+                "flex w-full px-4 min-w-0 overflow-hidden",
+                msg.role === "user" ? "justify-end" : "justify-start"
+              )}
             >
               {msg.role === "user" ? (
                 /* User message */
-                <div className="max-w-[90%] flex flex-col items-end mb-4">
-                  <div className="bg-[#F8F9FB] border border-slate-100 px-3 py-1.5 rounded-xl shadow-sm">
-                    <p className="text-[13px] text-gray-800 leading-relaxed">{msg.content}</p>
-                  </div>
+                <div className="max-w-[92%] flex flex-col items-end min-w-0 overflow-hidden">
                   {msg.contexts && msg.contexts.length > 0 && (
-                    <div className="flex flex-wrap gap-2 mt-2">
+                    <div className="flex flex-wrap justify-end gap-1.5 mb-2 w-full overflow-hidden">
                       {msg.contexts.map((ctx) => (
                         <ContextPill key={ctx.id} ctx={ctx} />
                       ))}
                     </div>
                   )}
+                  <div className="bg-[#F8F9FB] border border-slate-100 px-3 py-1.5 rounded-xl shadow-sm overflow-hidden break-words w-fit max-w-full">
+                    <p className="text-[13px] text-gray-800 leading-relaxed whitespace-pre-wrap">{msg.content}</p>
+                  </div>
                 </div>
               ) : (
                 /* AI message */
-                <div className="max-w-[92%] mb-4">
+                <div className="max-w-[95%] flex flex-col min-w-0 overflow-hidden">
                   <ThinkingIndicator isStreaming={false} />
-                  <div className="prose prose-sm dark:prose-invert max-w-none text-xs leading-relaxed">
+                  <div className="prose prose-sm dark:prose-invert max-w-full text-xs leading-relaxed break-words overflow-hidden">
                     <ReactMarkdown>{msg.content}</ReactMarkdown>
                   </div>
-                  <ActionBar content={msg.content} onRetry={() => handleRetry(idx)} />
+                  <div className="w-full overflow-hidden">
+                    <ActionBar content={msg.content} onRetry={() => handleRetry(idx)} />
+                  </div>
                 </div>
               )}
             </div>
@@ -440,11 +459,11 @@ export function ChatPanel() {
 
           {/* Streaming message or Loading state */}
           {(streamingToken || isGenerating) && (
-            <div className="flex justify-start mb-4">
-              <div className="max-w-[92%]">
+            <div className="flex justify-start w-full px-4 min-w-0 overflow-hidden">
+              <div className="max-w-[95%] flex flex-col min-w-0 overflow-hidden w-full">
                 <ThinkingIndicator isStreaming={!!streamingToken} isWaiting={!streamingToken} />
                 {streamingToken && (
-                  <div className="prose prose-sm dark:prose-invert max-w-none text-xs leading-relaxed">
+                  <div className="prose prose-sm dark:prose-invert max-w-full text-xs leading-relaxed break-words overflow-hidden">
                     <ReactMarkdown>{streamingToken}</ReactMarkdown>
                   </div>
                 )}
@@ -458,32 +477,18 @@ export function ChatPanel() {
       </ScrollArea>
 
       {/* Input area */}
-      <div className="shrink-0">
+      <div className="shrink-0 w-full overflow-hidden">
         {/* Context pills (pending) */}
         {chatContexts.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 px-3 pt-2 pb-1">
+          <div className="flex flex-wrap gap-1.5 px-3 pt-2 pb-1 w-full max-w-full overflow-hidden">
             {chatContexts.map((ctx) => (
-              <span
-                key={ctx.id}
-                className="flex items-center gap-1.5 px-2 py-1 bg-white border border-slate-200 rounded shadow-sm text-[11px] text-slate-600 font-mono max-w-[180px]"
-              >
-                <span className="shrink-0">
-                  {ctx.type === "file" ? "📁" : ctx.type === "page" ? "🔖" : "📝"}
-                </span>
-                <span className="truncate">{ctx.label || ctx.content}</span>
-                <button
-                  onClick={() => removeChatContext(ctx.id)}
-                  className="h-4 w-4 shrink-0 flex items-center justify-center rounded-full hover:bg-gray-100 hover:text-gray-900 cursor-pointer transition-colors"
-                >
-                  <X className="h-2.5 w-2.5" />
-                </button>
-              </span>
+              <ContextPill key={ctx.id} ctx={ctx} onRemove={removeChatContext} />
             ))}
           </div>
         )}
 
-        <div className="p-2">
-          <div className="relative rounded-xl border border-gray-200/60 bg-gray-50/50 focus-within:border-gray-300 focus-within:bg-white transition-colors">
+        <div className="p-2 w-full overflow-hidden">
+          <div className="relative rounded-xl border border-gray-200/60 bg-gray-50/50 focus-within:border-gray-300 focus-within:bg-white transition-colors w-full overflow-hidden">
             <textarea
               className="min-h-[56px] w-full resize-none bg-transparent px-3 py-2.5 text-sm font-normal outline-none placeholder:text-muted-foreground/50 disabled:cursor-not-allowed disabled:opacity-50"
               value={input}
@@ -493,13 +498,13 @@ export function ChatPanel() {
               disabled={!loadedModel}
             />
 
-            <div className="flex items-center justify-between px-2.5 py-1.5">
-              <div className="flex items-center gap-1 min-w-0 flex-1">
+            <div className="flex items-center justify-between px-2.5 py-1.5 w-full overflow-hidden">
+              <div className="flex items-center gap-1 min-w-0 flex-1 overflow-hidden">
                 <Select value={loadedModel?.id} onValueChange={handleModelSelect}>
-                  <SelectTrigger className="h-6 min-w-0 border-0 px-1.5 py-0 text-[11px] font-normal shadow-none bg-transparent hover:bg-accent/50 rounded transition-colors">
+                  <SelectTrigger className="h-6 min-w-0 border-0 px-1.5 py-0 text-[11px] font-normal shadow-none bg-transparent hover:bg-accent/50 rounded transition-colors w-full">
                     <SelectValue placeholder="Select model" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="max-w-[240px]">
                     {loadedModel?.source === "local" && (
                       <SelectItem value={loadedModel.id} className="text-xs">
                         {loadedModel.name}
@@ -518,10 +523,10 @@ export function ChatPanel() {
                 </Select>
               </div>
 
-              <div className="flex items-center gap-0.5">
+              <div className="flex items-center gap-0.5 shrink-0 ml-2">
                 {chatMessages.length > 0 && (
                   <button
-                    className="h-6 w-6 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors"
+                    className="h-6 w-6 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors shrink-0"
                     onClick={clearChat}
                     title="Clear chat"
                   >
@@ -531,7 +536,7 @@ export function ChatPanel() {
 
                 {isGenerating ? (
                   <button
-                    className="h-6 w-6 flex items-center justify-center rounded text-destructive hover:bg-destructive/10 transition-colors"
+                    className="h-6 w-6 flex items-center justify-center rounded text-destructive hover:bg-destructive/10 transition-colors shrink-0"
                     onClick={stopGeneration}
                     title="Stop"
                   >
@@ -539,7 +544,7 @@ export function ChatPanel() {
                   </button>
                 ) : (
                   <button
-                    className={`h-6 w-6 flex items-center justify-center rounded transition-colors ${
+                    className={`h-6 w-6 flex items-center justify-center rounded transition-colors shrink-0 ${
                       !loadedModel || !input.trim()
                         ? "text-muted-foreground/40 cursor-not-allowed"
                         : "text-foreground hover:bg-accent/50"
