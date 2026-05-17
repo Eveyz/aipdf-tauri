@@ -19,7 +19,7 @@ pub async fn download_model(
     std::fs::create_dir_all(&model_dir)?;
 
     // Core files to download
-    let mut files = vec![
+    let files = vec![
         ("config.json".to_string(), format!("{}/resolve/main/config.json", url)),
         ("tokenizer.json".to_string(), format!("{}/resolve/main/tokenizer.json", url)),
         ("model.onnx".to_string(), format!("{}/resolve/main/model.onnx", url)),

@@ -89,6 +89,71 @@ pub async fn load_model(
 }
 
 #[tauri::command]
+pub async fn load_embedding_model(
+    state: State<'_, AppState>,
+    model_id: String,
+) -> Result<(), CommandError> {
+    println!("[commands] Loading embedding model: {}", model_id);
+    let entry = registry::get_model_info(&model_id)
+        .map_err(|e| {
+            println!("[commands] Error finding model: {}", e);
+            CommandError::Model(e.to_string())
+        })?;
+
+    let model_path = if entry.path.join("model.onnx").exists() {
+        entry.path.join("model.onnx")
+    } else {
+        entry.path.join("onnx/model.onnx")
+    };
+
+    let tokenizer_path = entry.path.join("tokenizer.json");
+    println!("[commands] Paths: model={:?}, tokenizer={:?}", model_path, tokenizer_path);
+
+    let engine = crate::embedding::EmbeddingEngine::new(&model_path, &tokenizer_path)
+        .map_err(|e| {
+            println!("[commands] Error creating engine: {}", e);
+            CommandError::Ai(e)
+        })?;
+
+    {
+        let mut ai = state.ai.lock().map_err(|e| CommandError::Ai(e.to_string()))?;
+        ai.embedding_engine = Some(engine);
+    }
+
+    // Save as last used embedding model
+    state.db.set_setting("last_used_embedding_model_id", &model_id)
+        .map_err(|e| CommandError::Ai(e.to_string()))?;
+    
+    println!("[commands] Embedding model {} loaded successfully.", model_id);
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_embedding_engine_info(
+    state: State<'_, AppState>,
+) -> Result<Option<String>, CommandError> {
+    let ai = state.ai.lock().map_err(|e| CommandError::Ai(e.to_string()))?;
+    if ai.embedding_engine.is_some() {
+        // We don't store the ID in the engine itself yet, so we get it from settings
+        let id = state.db.get_setting("last_used_embedding_model_id")
+            .map_err(|e| CommandError::Ai(e.to_string()))?;
+        Ok(id)
+    } else {
+        Ok(None)
+    }
+}
+
+#[tauri::command]
+pub async fn unload_embedding_model(
+    state: State<'_, AppState>,
+) -> Result<(), CommandError> {
+    let mut ai = state.ai.lock().map_err(|e| CommandError::Ai(e.to_string()))?;
+    ai.embedding_engine = None;
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn save_cloud_model(
     state: State<'_, AppState>,
     id: String,

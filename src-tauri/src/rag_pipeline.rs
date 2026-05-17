@@ -16,19 +16,32 @@ pub async fn process_pdf_page(
     text_content: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    println!("[rag_pipeline] process_pdf_page called: doc_id={}, page_num={}, text_len={}", doc_id, page_num, text_content.len());
+    
     // 1. Deduplication: Query LanceDB
     let table = state.vector_db.open_table("document_chunks").execute().await
-        .map_err(|e| format!("Failed to open table: {}", e))?;
+        .map_err(|e| {
+            let err = format!("Failed to open table: {}", e);
+            println!("[rag_pipeline] Error: {}", err);
+            err
+        })?;
     
     let query = format!("doc_id = '{}' AND page_num = {}", doc_id, page_num);
     let mut stream = table.query().only_if(query).execute().await
-        .map_err(|e| format!("Failed to query DB: {}", e))?;
+        .map_err(|e| {
+            let err = format!("Failed to query DB: {}", e);
+            println!("[rag_pipeline] Error: {}", err);
+            err
+        })?;
     
     if let Some(Ok(batch)) = stream.next().await {
         if batch.num_rows() > 0 {
+            println!("[rag_pipeline] Page {} already indexed for doc {}. Skipping.", page_num, doc_id);
             return Ok(());
         }
     }
+
+    println!("[rag_pipeline] Indexing page {} for doc {}...", page_num, doc_id);
 
     // 2. Chunking & 3. Embedding
     let mut embeddings: Vec<Vec<f32>> = Vec::new();
@@ -38,6 +51,7 @@ pub async fn process_pdf_page(
     {
         let mut ai_state = state.ai.lock().unwrap();
         if let Some(engine) = &mut ai_state.embedding_engine {
+            println!("[rag_pipeline] Embedding engine found. Starting chunking...");
             let tokenizer = engine.tokenizer.clone();
             
             let config = ChunkConfig::new(400)
@@ -47,22 +61,32 @@ pub async fn process_pdf_page(
                 
             let splitter = TextSplitter::new(config);
             
-            let chunks = splitter.chunks(&text_content);
+            let chunks: Vec<_> = splitter.chunks(&text_content).collect();
+            println!("[rag_pipeline] Split into {} chunks.", chunks.len());
+
             for chunk in chunks {
                 let chunk_str = chunk.to_string();
-                let embedding = engine.generate_embedding(&chunk_str)?;
+                let embedding = engine.generate_embedding(&chunk_str)
+                    .map_err(|e| {
+                        println!("[rag_pipeline] Embedding generation failed: {}", e);
+                        e
+                    })?;
                 vector_dim = embedding.len() as i32;
                 embeddings.push(embedding);
                 chunk_texts.push(chunk_str);
             }
         } else {
+            println!("[rag_pipeline] Error: Embedding engine not initialized");
             return Err("Embedding engine not initialized".to_string());
         }
     }
 
     if embeddings.is_empty() {
+        println!("[rag_pipeline] No chunks/embeddings generated for page {}.", page_num);
         return Ok(()); 
     }
+
+    println!("[rag_pipeline] Generated {} embeddings with dim {}. Storing in LanceDB...", embeddings.len(), vector_dim);
 
     // 4. Storage into LanceDB
     let mut id_builder = StringBuilder::new();
@@ -100,12 +124,42 @@ pub async fn process_pdf_page(
     let batch = RecordBatch::try_new(
         schema.clone(),
         vec![id_array, doc_id_array, page_num_array, text_array, vector_array],
-    ).map_err(|e| format!("Failed to create record batch: {}", e))?;
+    ).map_err(|e| {
+        let err = format!("Failed to create record batch: {}", e);
+        println!("[rag_pipeline] Error: {}", err);
+        err
+    })?;
 
     table.add(vec![batch]).execute().await
-        .map_err(|e| format!("Failed to insert into LanceDB: {}", e))?;
+        .map_err(|e| {
+            let err = format!("Failed to insert into LanceDB: {}", e);
+            println!("[rag_pipeline] Error: {}", err);
+            err
+        })?;
+
+    println!("[rag_pipeline] Successfully indexed page {} for doc {}.", page_num, doc_id);
 
     Ok(())
+}
+
+#[tauri::command]
+pub async fn check_page_indexed(
+    doc_id: String,
+    page_num: i32,
+    state: State<'_, AppState>,
+) -> Result<bool, String> {
+    let table = state.vector_db.open_table("document_chunks").execute().await
+        .map_err(|e| format!("Failed to open table: {}", e))?;
+    
+    let query = format!("doc_id = '{}' AND page_num = {}", doc_id, page_num);
+    let mut stream = table.query().only_if(query).execute().await
+        .map_err(|e| format!("Failed to query DB: {}", e))?;
+    
+    if let Some(Ok(batch)) = stream.next().await {
+        Ok(batch.num_rows() > 0)
+    } else {
+        Ok(false)
+    }
 }
 
 #[tauri::command]

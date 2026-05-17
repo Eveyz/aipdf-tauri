@@ -12,15 +12,33 @@ pub struct EmbeddingEngine {
 impl EmbeddingEngine {
     /// Creates a new EmbeddingEngine by loading the ONNX model and the Tokenizer.
     pub fn new(model_path: &Path, tokenizer_path: &Path) -> Result<Self, String> {
+        println!("[EmbeddingEngine] Explicitly initializing ORT...");
+        let _ = ort::init()
+            .with_name("aipdf-embeddings")
+            .commit();
+
+        println!("[EmbeddingEngine] Loading tokenizer from {:?}", tokenizer_path);
         let tokenizer = Tokenizer::from_file(tokenizer_path)
             .map_err(|e| format!("Failed to load tokenizer: {}", e))?;
+        println!("[EmbeddingEngine] Tokenizer loaded successfully.");
         
+        println!("[EmbeddingEngine] Reading model bytes from {:?}", model_path);
+        let model_bytes = std::fs::read(model_path)
+            .map_err(|e| format!("Failed to read model file: {}", e))?;
+        println!("[EmbeddingEngine] Model bytes read: {} MB", model_bytes.len() / 1024 / 1024);
+
+        println!("[EmbeddingEngine] Creating ONNX session from memory...");
         let session = Session::builder()
             .map_err(|e| format!("Failed to create session builder: {}", e))?
-            .with_optimization_level(GraphOptimizationLevel::Level3)
+            .with_optimization_level(GraphOptimizationLevel::Level1)
             .map_err(|e| format!("Failed to set optimization level: {}", e))?
-            .commit_from_file(model_path)
-            .map_err(|e| format!("Failed to load ONNX model: {}", e))?;
+            .with_intra_threads(1)
+            .map_err(|e| format!("Failed to set intra threads: {}", e))?
+            .with_inter_threads(1)
+            .map_err(|e| format!("Failed to set inter threads: {}", e))?
+            .commit_from_memory(&model_bytes)
+            .map_err(|e| format!("Failed to load ONNX model from memory: {}", e))?;
+        println!("[EmbeddingEngine] ONNX session created successfully.");
             
         Ok(Self { session, tokenizer })
     }

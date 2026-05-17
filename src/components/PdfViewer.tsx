@@ -29,9 +29,16 @@ const resetHash = () => {
 }
 
 import { useAi } from "../hooks/useAi"
+import { usePageIndexer } from "../hooks/usePageIndexer"
 
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
+
+function PageIndexer({ pdfDocument }: { pdfDocument: any }) {
+  const { currentPage, lastPdfPath } = useStore()
+  usePageIndexer(pdfDocument, currentPage, lastPdfPath)
+  return null
+}
 
 function AddPageContextButton() {
   const { currentPage, pdfInfo, addChatContext, setChatOpen } = useStore()
@@ -632,6 +639,7 @@ export function PdfViewer() {
                     highlights={highlights.filter(h => h.documentPath === lastPdfPath) as IHighlight[]}
                   />
                   <OutlineFetcher pdfDocument={pdfDocument} />
+                  <PageIndexer pdfDocument={pdfDocument} />
                 </div>
               )}
             </PdfLoader>

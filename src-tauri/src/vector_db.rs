@@ -1,7 +1,6 @@
 use lancedb::Connection;
 use arrow_schema::{DataType, Field, Schema};
 use std::sync::Arc;
-use dirs::data_dir;
 
 pub async fn init_db() -> lancedb::Result<Connection> {
     let app_dir = dirs::home_dir()
@@ -22,9 +21,14 @@ pub async fn init_document_table(conn: &Connection, vector_dim: i32) -> lancedb:
     
     let tables = conn.table_names().execute().await?;
     if tables.contains(&table_name.to_string()) {
+        // Table exists, check if we need to handle dimension mismatch?
+        // For now, assume it's okay or user will clear DB.
         return Ok(());
     }
 
+    // Use a larger dimension if we want to be safe, but 384 is common for small models.
+    // 1536 is common for OpenAI. 768 for Nomic.
+    // Ideally we'd create this when the first model is loaded.
     let schema = Arc::new(Schema::new(vec![
         Field::new("id", DataType::Utf8, false),
         Field::new("doc_id", DataType::Utf8, false),

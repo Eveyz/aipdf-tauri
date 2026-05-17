@@ -33,13 +33,15 @@ export function ModelManager() {
     setModelManagerOpen,
     downloadProgress,
     loadedModel,
+    activeEmbeddingModel,
     cloudModels,
     addCloudModel,
     deleteCloudModel,
     setLoadedModel,
+    setActiveEmbeddingModel,
     setDownloadProgress,
   } = useStore()
-  const { listModels, loadModel, unloadModel, downloadModel, deleteModel, testCloudModel } = useAi()
+  const { listModels, loadModel, unloadModel, loadEmbeddingModel, unloadEmbeddingModel, downloadModel, deleteModel, testCloudModel } = useAi()
   
   const [activeCategory, setActiveCategory] = useState<ModelCategory>("chat")
   const [activeSource, setActiveSource] = useState<ModelSource>("local")
@@ -55,10 +57,14 @@ export function ModelManager() {
   const [cloudApiKey, setCloudApiKey] = useState("")
   const [cloudModelName, setCloudModelName] = useState("")
   const [testResult, setTestResult] = useState<string>("")
-  const [loading, setLoading] = useState(false)
+  const [categoryLoading, setCategoryLoading] = useState<Record<ModelCategory, boolean>>({
+    chat: false,
+    embedding: false,
+    reranker: false
+  })
+  const [loadingModelId, setLoadingModelId] = useState<string | null>(null)
 
   // --- MOCK STATES FOR ACTIVE CATEGORIES ---
-  const [mockActiveEmbedding, setMockActiveEmbedding] = useState<any>(null)
   const [mockActiveReranker, setMockActiveReranker] = useState<any>(null)
 
   const [mockCloudEmbeddings, setMockCloudEmbeddings] = useState<any[]>([])
@@ -110,38 +116,60 @@ export function ModelManager() {
   }
 
   async function handleLoad(modelId: string) {
-    if (activeCategory === "chat") {
-      setLoading(true)
+    const category = activeCategory
+    setCategoryLoading(prev => ({ ...prev, [category]: true }))
+    setLoadingModelId(modelId)
+    if (category === "chat") {
       try {
         await loadModel(modelId)
       } catch (e) {
         console.error("Failed to load model:", e)
       } finally {
-        setLoading(false)
+        setCategoryLoading(prev => ({ ...prev, chat: false }))
+        setLoadingModelId(null)
       }
-    } else if (activeCategory === "embedding") {
-      const m = getEmbeddingsList().find(x => x.id === modelId)
-      if (m) setMockActiveEmbedding({ id: m.id, name: m.name, modelType: m.model_type })
-    } else if (activeCategory === "reranker") {
+    } else if (category === "embedding") {
+      try {
+        await loadEmbeddingModel(modelId)
+        const m = getEmbeddingsList().find(x => x.id === modelId)
+        if (m) setActiveEmbeddingModel({ id: m.id, name: m.name })
+      } catch (e) {
+        console.error("Failed to load embedding model:", e)
+      } finally {
+        setCategoryLoading(prev => ({ ...prev, embedding: false }))
+        setLoadingModelId(null)
+      }
+    } else if (category === "reranker") {
+      setCategoryLoading(prev => ({ ...prev, reranker: false }))
+      setLoadingModelId(null)
       const m = getRerankersList().find(x => x.id === modelId)
       if (m) setMockActiveReranker({ id: m.id, name: m.name, modelType: m.model_type })
     }
   }
 
   async function handleUnload() {
-    if (activeCategory === "chat") {
-      setLoading(true)
+    const category = activeCategory
+    setCategoryLoading(prev => ({ ...prev, [category]: true }))
+    if (category === "chat") {
       try {
         await unloadModel()
       } catch (e) {
         console.error("Failed to unload model:", e)
       } finally {
-        setLoading(false)
+        setCategoryLoading(prev => ({ ...prev, chat: false }))
       }
-    } else if (activeCategory === "embedding") {
-      setMockActiveEmbedding(null)
-    } else if (activeCategory === "reranker") {
+    } else if (category === "embedding") {
+      try {
+        await unloadEmbeddingModel()
+        setActiveEmbeddingModel(null)
+      } catch (e) {
+        console.error("Failed to unload embedding model:", e)
+      } finally {
+        setCategoryLoading(prev => ({ ...prev, embedding: false }))
+      }
+    } else if (category === "reranker") {
       setMockActiveReranker(null)
+      setCategoryLoading(prev => ({ ...prev, reranker: false }))
     }
   }
 
@@ -172,7 +200,7 @@ export function ModelManager() {
     } else if (activeCategory === "embedding") {
       try {
         await deleteModel(modelId)
-        if (mockActiveEmbedding?.id === modelId) setMockActiveEmbedding(null)
+        if (activeEmbeddingModel?.id === modelId) setActiveEmbeddingModel(null)
         await refreshModels()
       } catch (e) {
         console.error("Failed to delete model:", e)
@@ -202,10 +230,9 @@ export function ModelManager() {
         modelName: model.modelName,
       })
     } else if (activeCategory === "embedding") {
-      setMockActiveEmbedding({
+      setActiveEmbeddingModel({
         id: `cloud:${model.id}`,
         name: model.name,
-        modelType: `${model.vendor} · ${model.modelName}`,
       })
     } else if (activeCategory === "reranker") {
       setMockActiveReranker({
@@ -251,7 +278,8 @@ export function ModelManager() {
     const modelName = model?.modelName ?? cloudModelName.trim()
     if (!baseUrl || !apiKey || !modelName) return
 
-    setLoading(true)
+    const category = activeCategory
+    setCategoryLoading(prev => ({ ...prev, [category]: true }))
     setTestResult("Testing connection...")
     try {
       const result = await testCloudModel(baseUrl, apiKey, modelName)
@@ -259,7 +287,7 @@ export function ModelManager() {
     } catch (e) {
       setTestResult(String(e))
     } finally {
-      setLoading(false)
+      setCategoryLoading(prev => ({ ...prev, [category]: false }))
     }
   }
 
@@ -268,7 +296,7 @@ export function ModelManager() {
       await deleteCloudModel(id)
     } else if (activeCategory === "embedding") {
       setMockCloudEmbeddings(prev => prev.filter(m => m.id !== id))
-      if (mockActiveEmbedding?.id === `cloud:${id}`) setMockActiveEmbedding(null)
+      if (activeEmbeddingModel?.id === `cloud:${id}`) setActiveEmbeddingModel(null)
     } else if (activeCategory === "reranker") {
       setMockCloudRerankers(prev => prev.filter(m => m.id !== id))
       if (mockActiveReranker?.id === `cloud:${id}`) setMockActiveReranker(null)
@@ -278,7 +306,7 @@ export function ModelManager() {
   // Derived state for the UI
   const currentActiveModel = 
     activeCategory === "chat" ? loadedModel :
-    activeCategory === "embedding" ? mockActiveEmbedding : 
+    activeCategory === "embedding" ? activeEmbeddingModel : 
     mockActiveReranker
 
   const categoryLabel = 
@@ -356,9 +384,18 @@ export function ModelManager() {
                 </p>
               </div>
               {currentActiveModel && (
-                <Button variant="outline" size="sm" onClick={handleUnload} disabled={loading} className="rounded-xl">
-                  <Power className="mr-1.5 h-3.5 w-3.5" />
-                  Unload / Deactivate
+                <Button variant="outline" size="sm" onClick={handleUnload} disabled={categoryLoading[activeCategory]} className="rounded-xl min-w-[120px]">
+                  {categoryLoading[activeCategory] ? (
+                    <>
+                      <RefreshCw className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                      Unloading...
+                    </>
+                  ) : (
+                    <>
+                      <Power className="mr-1.5 h-3.5 w-3.5" />
+                      Unload / Deactivate
+                    </>
+                  )}
                 </Button>
               )}
             </div>
@@ -411,7 +448,7 @@ export function ModelManager() {
                                   variant="default"
                                   size="sm"
                                   onClick={() => handleDownload(m.rawId || m.id)}
-                                  disabled={loading || isDownloading}
+                                  disabled={categoryLoading[activeCategory] || isDownloading}
                                   className="rounded-xl shadow-sm"
                                 >
                                   {isDownloading ? (
@@ -431,10 +468,17 @@ export function ModelManager() {
                                   variant="outline"
                                   size="sm"
                                   onClick={() => handleLoad(m.id)}
-                                  disabled={loading}
-                                  className="rounded-xl shadow-sm"
+                                  disabled={categoryLoading[activeCategory]}
+                                  className="rounded-xl shadow-sm min-w-[100px]"
                                 >
-                                  Load
+                                  {categoryLoading[activeCategory] && loadingModelId === m.id ? (
+                                    <>
+                                      <RefreshCw className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                                      Loading...
+                                    </>
+                                  ) : (
+                                    "Load"
+                                  )}
                                 </Button>
                               ) : null}
                               {(m.has_model || !m.isDefault) && (
@@ -499,8 +543,12 @@ export function ModelManager() {
                             </p>
                           </div>
                           <div className="flex shrink-0 gap-2">
-                            <Button variant="outline" size="sm" onClick={() => handleTestCloudModel(m)} disabled={loading} className="rounded-xl shadow-sm">
-                              <PlugZap className="mr-1.5 h-3.5 w-3.5" />
+                            <Button variant="outline" size="sm" onClick={() => handleTestCloudModel(m)} disabled={categoryLoading[activeCategory]} className="rounded-xl shadow-sm">
+                              {categoryLoading[activeCategory] ? (
+                                <RefreshCw className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <PlugZap className="mr-1.5 h-3.5 w-3.5" />
+                              )}
                               Test
                             </Button>
                             <Button size="sm" onClick={() => useCloudModel(m)} className="rounded-xl shadow-sm">
@@ -532,8 +580,12 @@ export function ModelManager() {
                     <Input className="col-span-2 rounded-xl border-gray-200" placeholder="API key" type="password" value={cloudApiKey} onChange={(e) => setCloudApiKey(e.target.value)} />
                   </div>
                   <div className="flex items-center gap-3">
-                    <Button variant="outline" onClick={() => handleTestCloudModel()} disabled={loading || !cloudBaseUrl.trim() || !cloudApiKey.trim() || !cloudModelName.trim()} className="rounded-xl shadow-sm">
-                      <PlugZap className="mr-1.5 h-4 w-4" />
+                    <Button variant="outline" onClick={() => handleTestCloudModel()} disabled={categoryLoading[activeCategory] || !cloudBaseUrl.trim() || !cloudApiKey.trim() || !cloudModelName.trim()} className="rounded-xl shadow-sm">
+                      {categoryLoading[activeCategory] ? (
+                        <RefreshCw className="mr-1.5 h-4 w-4 animate-spin" />
+                      ) : (
+                        <PlugZap className="mr-1.5 h-4 w-4" />
+                      )}
                       Test Connection
                     </Button>
                     <Button onClick={handleAddCloudModel} disabled={!cloudName.trim() || !cloudBaseUrl.trim() || !cloudApiKey.trim() || !cloudModelName.trim()} className="rounded-xl shadow-sm">

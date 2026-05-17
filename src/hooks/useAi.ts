@@ -166,6 +166,14 @@ Do NOT include labels like "Translation:", "Result:", or word breakdowns. Output
     setLoadedModel(null)
   }
 
+  async function loadEmbeddingModel(modelId: string) {
+    await invoke("load_embedding_model", { modelId })
+  }
+
+  async function unloadEmbeddingModel() {
+    await invoke("unload_embedding_model")
+  }
+
   async function generate(prompt: string, contexts?: ChatContext[], maxTokens?: number, temperature?: number) {
     const state = useStore.getState()
     const { loadedModel, activeSessionId, chatMessages: currentMessages } = state
@@ -239,6 +247,8 @@ Do NOT include labels like "Translation:", "Result:", or word breakdowns. Output
     isGenerating,
     loadModel,
     unloadModel,
+    loadEmbeddingModel,
+    unloadEmbeddingModel,
     generate,
     translateText,
     stopGeneration,

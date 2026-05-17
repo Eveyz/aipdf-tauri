@@ -149,6 +149,7 @@ interface AppState {
 
   // AI
   loadedModel: ModelInfo | null
+  activeEmbeddingModel: { id: string; name: string } | null
   isGenerating: boolean
   isTranslating: boolean
   chatMessages: ChatMessage[]
@@ -170,6 +171,7 @@ interface AppState {
 
   // Actions
   init: () => Promise<void>
+  setActiveEmbeddingModel: (model: { id: string; name: string } | null) => void
   createWorkspace: (name: string, type?: "standard" | "quick_read") => Promise<string>
   switchWorkspace: (id: string) => Promise<void>
   deleteWorkspace: (id: string) => Promise<void>
@@ -232,6 +234,7 @@ export const useStore = create<AppState>((set, get) => ({
 
   // AI
   loadedModel: null,
+  activeEmbeddingModel: null,
   isGenerating: false,
   isTranslating: false,
   chatMessages: [],
@@ -302,6 +305,13 @@ export const useStore = create<AppState>((set, get) => ({
       const lastModelId = await invoke<string | null>("get_setting", { key: "last_used_model_id" })
       
       set({ workspaces: mappedWorkspaces, cloudModels, lastPdfPath: lastPdf })
+
+      // Sync embedding model state
+      const activeEmbeddingId = await invoke<string | null>("get_embedding_engine_info")
+      if (activeEmbeddingId) {
+        // We might want to find the name, but for now ID is enough to show it's active
+        set({ activeEmbeddingModel: { id: activeEmbeddingId, name: activeEmbeddingId.replace(/_/g, "/") } })
+      }
 
       if (lastWsId && mappedWorkspaces.some(w => w.id === lastWsId)) {
         await get().switchWorkspace(lastWsId)
@@ -440,6 +450,8 @@ switchWorkspace: async (id) => {
       )
     }))
   },
+
+  setActiveEmbeddingModel: (model) => set({ activeEmbeddingModel: model }),
 
   setWorkspaceLastDocPath: async (path) => {
     const id = get().activeWorkspaceId
