@@ -186,6 +186,14 @@
   display: none;
 }
 
+/* Fix Radix ScrollArea viewport inner div: it uses display:table which
+   prevents content from shrinking/wrapping within flex layouts.
+   Override to block so children respect the container width. */
+[data-radix-scroll-area-viewport] > div {
+  display: block !important;
+  min-width: 0 !important;
+}
+
 /* Add border and shadow to PDF pages for better visibility when zoomed out */
 .pdfViewer .page {
   border: 1px solid rgba(0, 0, 0, 0.15) !important;

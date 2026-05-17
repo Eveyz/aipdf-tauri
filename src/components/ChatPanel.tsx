@@ -33,28 +33,29 @@ import {
 
 const MarkdownRenderer = ({ content }: { content: string }) => {
   return (
-    <div className="prose prose-sm max-w-full text-gray-800 text-[13px] leading-relaxed overflow-x-auto">
+    <div className="prose prose-sm w-full min-w-0 max-w-none overflow-hidden text-gray-800 text-[13px] leading-relaxed break-words [overflow-wrap:anywhere]">
       <ReactMarkdown 
         remarkPlugins={[remarkGfm]}
         components={{
-          h1: ({node, ...props}) => <h1 className="text-base font-bold text-gray-950 mt-4 mb-2" {...props} />,
-          h2: ({node, ...props}) => <h2 className="text-[14px] font-semibold text-gray-900 mt-3 mb-1.5" {...props} />,
-          h3: ({node, ...props}) => <h3 className="text-[13px] font-medium text-gray-800 mt-2 mb-1" {...props} />,
+          h1: ({node, ...props}) => <h1 className="text-base font-bold text-gray-950 mt-4 mb-2 break-words whitespace-normal [overflow-wrap:anywhere]" {...props} />,
+          h2: ({node, ...props}) => <h2 className="text-[14px] font-semibold text-gray-900 mt-3 mb-1.5 break-words whitespace-normal [overflow-wrap:anywhere]" {...props} />,
+          h3: ({node, ...props}) => <h3 className="text-[13px] font-medium text-gray-800 mt-2 mb-1 break-words whitespace-normal [overflow-wrap:anywhere]" {...props} />,
+          p: ({node, ...props}) => <p className="break-words whitespace-normal [overflow-wrap:anywhere]" {...props} />,
           table: ({node, ...props}) => (
-            <div className="overflow-x-auto my-3 border border-gray-200 rounded-lg shadow-sm">
-              <table className="min-w-full divide-y divide-gray-200 text-[12px]" {...props} />
+            <div className="w-full max-w-full overflow-x-auto my-3 border border-gray-200 rounded-lg shadow-sm">
+              <table className="w-full table-fixed divide-y divide-gray-200 text-[12px]" {...props} />
             </div>
           ),
           thead: ({node, ...props}) => <thead className="bg-gray-50 text-gray-900 font-semibold" {...props} />,
-          th: ({node, ...props}) => <th className="px-3 py-2 text-left" {...props} />,
-          td: ({node, ...props}) => <td className="px-3 py-2 text-gray-600 border-t border-gray-100" {...props} />,
-          ul: ({node, ...props}) => <ul className="list-disc pl-5 my-2 space-y-1" {...props} />,
-          ol: ({node, ...props}) => <ol className="list-decimal pl-5 my-2 space-y-1" {...props} />,
-          li: ({node, ...props}) => <li className="text-gray-700" {...props} />,
+          th: ({node, ...props}) => <th className="px-3 py-2 text-left break-words [overflow-wrap:anywhere]" {...props} />,
+          td: ({node, ...props}) => <td className="px-3 py-2 text-gray-600 border-t border-gray-100 break-words [overflow-wrap:anywhere]" {...props} />,
+          ul: ({node, ...props}) => <ul className="list-disc pl-5 my-2 space-y-1 break-words [overflow-wrap:anywhere]" {...props} />,
+          ol: ({node, ...props}) => <ol className="list-decimal pl-5 my-2 space-y-1 break-words [overflow-wrap:anywhere]" {...props} />,
+          li: ({node, ...props}) => <li className="text-gray-700 break-words [overflow-wrap:anywhere]" {...props} />,
           strong: ({node, ...props}) => <strong className="font-bold text-gray-950" {...props} />,
-          code: ({node, ...props}) => <code className="bg-gray-100 text-pink-600 px-1 py-0.5 rounded font-mono text-[11px]" {...props} />,
+          code: ({node, ...props}) => <code className="bg-gray-100 text-pink-600 px-1 py-0.5 rounded font-mono text-[11px] break-words [overflow-wrap:anywhere]" {...props} />,
           pre: ({node, ...props}) => (
-            <pre className="bg-gray-50 border border-gray-100 rounded-lg p-3 my-2 overflow-x-auto custom-scrollbar" {...props} />
+            <pre className="bg-gray-50 border border-gray-100 rounded-lg p-3 my-2 w-full max-w-full overflow-x-auto custom-scrollbar" {...props} />
           ),
         }}
       >
@@ -541,16 +542,16 @@ export function ChatPanel() {
               ) : (
                 <div className="max-w-[95%] flex flex-col min-w-0 overflow-hidden w-full">
                   <ThinkingIndicator isStreaming={false} />
-                  <div className="w-full overflow-x-auto custom-scrollbar pb-1">
+                  <div className="w-full min-w-0 pb-1 overflow-hidden">
                     {rawMessageIds.has(msg.id) ? (
-                      <pre className="text-[11px] font-mono bg-gray-50 p-3 rounded-lg border border-gray-100 overflow-x-auto whitespace-pre-wrap break-words text-gray-600 leading-relaxed">
+                      <pre className="text-[11px] font-mono bg-gray-50 p-3 rounded-lg border border-gray-100 w-full min-w-0 max-w-full overflow-x-auto whitespace-pre-wrap break-words [overflow-wrap:anywhere] text-gray-600 leading-relaxed">
                         {msg.content}
                       </pre>
                     ) : (
                       <MarkdownRenderer content={msg.content} />
                     )}
                   </div>
-                  <div className="w-full overflow-hidden">
+                  <div className="w-full min-w-0">
                     <ActionBar 
                       content={msg.content} 
                       onRetry={() => handleRetry(idx)} 
@@ -568,9 +569,9 @@ export function ChatPanel() {
               <div className="max-w-[95%] flex flex-col min-w-0 overflow-hidden w-full">
                 <ThinkingIndicator isStreaming={!!streamingToken} isWaiting={!streamingToken} />
                 {streamingToken && (
-                  <div className="w-full overflow-x-auto custom-scrollbar pb-1">
+                  <div className="w-full min-w-0 pb-1 overflow-hidden">
                     {rawMessageIds.has("streaming") ? (
-                      <pre className="text-[11px] font-mono bg-gray-50 p-3 rounded-lg border border-gray-100 overflow-x-auto whitespace-pre-wrap break-words text-gray-600 leading-relaxed">
+                      <pre className="text-[11px] font-mono bg-gray-50 p-3 rounded-lg border border-gray-100 w-full min-w-0 max-w-full overflow-x-auto whitespace-pre-wrap break-words [overflow-wrap:anywhere] text-gray-600 leading-relaxed">
                         {streamingToken}
                       </pre>
                     ) : (
