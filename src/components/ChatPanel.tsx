@@ -16,9 +16,12 @@ import {
   Wand2,
   Check,
   Circle,
+  History,
+  MoreHorizontal,
 } from "lucide-react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
+import { ChatHistoryModal } from "./ChatHistoryModal"
 import { useAi } from "../hooks/useAi"
 import { useStore, type ChatContext } from "../store"
 import { cn } from "../lib/utils"
@@ -202,15 +205,11 @@ export function ChatPanel() {
   } = useStore()
 
   const [input, setInput] = useState("")
-  const [editingSessionId, setEditingSessionId] = useState<string | null>(null)
-  const [editName, setEditName] = useState("")
-  const [isSessionsExpanded, setIsSessionsExpanded] = useState(false)
+  const [historyModalOpen, setHistoryModalOpen] = useState(false)
   const [showContextMenu, setShowContextMenu] = useState(false)
   const [rawMessageIds, setRawMessageIds] = useState<Set<string>>(new Set())
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const contextMenuRef = useRef<HTMLDivElement>(null)
-
-  const displaySessions = isSessionsExpanded ? sessions : sessions.slice(0, 3)
 
   const scrollToBottom = (behavior: ScrollBehavior = "auto") => {
     messagesEndRef.current?.scrollIntoView({ behavior })
@@ -351,154 +350,44 @@ export function ChatPanel() {
     })
   }
 
-  function handleStartRename(sessionId: string, currentName: string) {
-    setEditingSessionId(sessionId)
-    setEditName(currentName)
-  }
-
-  function handleSaveRename(sessionId: string) {
-    if (editName.trim()) {
-      renameSession(sessionId, editName.trim())
-    }
-    setEditingSessionId(null)
-    setEditName("")
-  }
-
-  function formatDate(timestamp: number) {
-    const date = new Date(timestamp)
-    const now = new Date()
-    const diff = now.getTime() - date.getTime()
-    const days = Math.floor(diff / (1000 * 60 * 60 * 24))
-
-    if (days === 0) return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-    if (days === 1) return "Yesterday"
-    if (days < 7) return date.toLocaleDateString([], { weekday: "short" })
-    return date.toLocaleDateString([], { month: "short", day: "numeric" })
-  }
 
   return (
     <div className="flex h-full w-full min-w-0 flex-col bg-white overflow-hidden max-w-full relative">
+      <ChatHistoryModal 
+        open={historyModalOpen} 
+        onOpenChange={setHistoryModalOpen} 
+      />
+
       {/* Header */}
-      <div className="flex shrink-0 items-center justify-between border-b px-3 py-1.5 w-full overflow-hidden">
-        <button
-          onClick={() => setShowSessions(!showSessions)}
-          className="flex items-center gap-1 text-[11px] font-semibold text-gray-400 uppercase tracking-wider hover:text-gray-600 transition-colors shrink-0"
-        >
-          {showSessions ? (
-            <ChevronDown className="h-3 w-3" />
-          ) : (
-            <ChevronRight className="h-3 w-3" />
-          )}
-          <span>Sessions</span>
-        </button>
-        <button
-          className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-gray-100 text-gray-600 transition-colors shrink-0"
-          onClick={createSession}
-          title="New session"
-        >
-          <Plus className="w-4 h-4" />
-        </button>
-      </div>
-
-      {/* Sessions list */}
-      {showSessions && (
-        <div className="shrink-0 border-b bg-gray-50/30 w-full overflow-hidden">
-          <div className={`flex flex-col gap-1 transition-all duration-300 py-1 w-full ${
-            isSessionsExpanded 
-              ? 'max-h-[30vh] overflow-y-auto custom-scrollbar pr-1' 
-              : 'overflow-hidden'
-          }`}>
-            {sessions.length === 0 ? (
-              <p className="px-3 py-2 text-xs font-normal text-muted-foreground italic">No sessions in this workspace</p>
-            ) : (
-              displaySessions.map((session) => (
-                <div
-                  key={session.id}
-                  className={`group relative flex items-center px-0.5 rounded-lg transition-colors mx-1 border border-transparent ${
-                    session.id === activeSessionId ? "bg-gray-100 border-gray-200" : "hover:bg-gray-100"
-                  }`}
-                >
-                  <div 
-                    className="absolute inset-0 z-0 cursor-pointer"
-                    onClick={() => switchSession(session.id)}
-                  />
-
-                  <div className="relative z-10 flex items-center gap-2 px-2 py-1 w-full min-w-0 pointer-events-none overflow-hidden">
-                    <Circle className={`h-2 w-2 shrink-0 mt-[1px] ${session.id === activeSessionId ? "text-primary" : "text-gray-400"}`} />
-                    
-                    <div className="min-w-0 flex-1 pr-14">
-                      {editingSessionId === session.id ? (
-                        <input
-                          autoFocus
-                          className="w-full bg-transparent text-[13px] font-medium outline-none border-b border-primary/30 pb-0.5 pointer-events-auto"
-                          value={editName}
-                          onChange={(e) => setEditName(e.target.value)}
-                          onBlur={() => handleSaveRename(session.id)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") handleSaveRename(session.id)
-                            if (e.key === "Escape") {
-                              setEditingSessionId(null)
-                              setEditName("")
-                            }
-                          }}
-                          onClick={(e) => e.stopPropagation()}
-                        />
-                      ) : (
-                        <span className={`truncate text-xs font-medium block ${session.id === activeSessionId ? "text-gray-900" : "text-gray-700"}`}>
-                          {session.name}
-                        </span>
-                      )}
-                    </div>
-                    
-                    <div 
-                      className={`absolute right-1 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity pointer-events-auto ${editingSessionId === session.id ? "hidden" : ""}`}
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <button
-                        className="p-1 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          handleStartRename(session.id, session.name)
-                        }}
-                        title="Rename"
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </button>
-                      <button
-                        className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          if (confirm("Delete this session?")) {
-                            deleteSession(session.id)
-                          }
-                        }}
-                        title="Delete"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-
-                    {!editingSessionId && (
-                      <span className="absolute right-2 text-[10px] text-gray-400 group-hover:opacity-0 transition-opacity shrink-0">
-                        {formatDate(session.updatedAt)}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-          
-          {sessions.length > 3 && (
-            <button 
-              onClick={() => setIsSessionsExpanded(!isSessionsExpanded)}
-              className="mt-1 mb-2 w-full text-left pl-4 py-1.5 text-xs font-medium text-gray-400 hover:text-gray-700 hover:bg-gray-100/50 rounded transition-colors"
-            >
-              {isSessionsExpanded ? "Show less" : `View all ${sessions.length} sessions`}
-            </button>
-          )}
+      <div className="flex shrink-0 items-center justify-between border-b px-3 py-1.5 w-full overflow-hidden h-[40px]">
+        <div className="flex items-center min-w-0 pr-2">
+          <span className="text-[13px] font-semibold text-gray-800 truncate">
+            {sessions.find(s => s.id === activeSessionId)?.name || "New Session"}
+          </span>
         </div>
-      )}
+        <div className="flex items-center gap-1 shrink-0">
+          <button
+            onClick={() => setHistoryModalOpen(true)}
+            className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-gray-100 text-gray-500 hover:text-gray-900 transition-colors"
+            title="Chat History"
+          >
+            <History className="w-4 h-4" />
+          </button>
+          <button
+            onClick={createSession}
+            className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-gray-100 text-gray-500 hover:text-gray-900 transition-colors"
+            title="New Chat"
+          >
+            <Plus className="w-4 h-4" />
+          </button>
+          <button
+            className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-gray-100 text-gray-500 hover:text-gray-900 transition-colors"
+            title="Options"
+          >
+            <MoreHorizontal className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
 
       {/* Chat messages */}
       <ScrollArea className="scrollbar-thin min-h-0 flex-1 w-full overflow-hidden">
@@ -598,7 +487,7 @@ export function ChatPanel() {
           {showContextMenu && (
             <div 
               ref={contextMenuRef}
-              className="absolute bottom-full left-0 mb-3 w-56 bg-white border border-gray-200 rounded-lg shadow-xl py-1.5 z-[100] animate-in fade-in slide-in-from-bottom-2 duration-200"
+              className="absolute bottom-full left-0 mb-1.5 w-56 bg-white border border-gray-200 rounded-lg shadow-xl py-1.5 z-[100] animate-in fade-in slide-in-from-bottom-2 duration-200"
             >
               <div className="px-3 py-1 text-[10px] font-bold text-gray-400 uppercase tracking-tight">Attach Context</div>
               <button 
