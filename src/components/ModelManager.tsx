@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { Cloud, Download, Play, PlugZap, Trash2, Power, RefreshCw } from "lucide-react"
+import { Cloud, Download, Play, PlugZap, Trash2, Power, RefreshCw, MessageSquare, Brain, Target } from "lucide-react"
 import { useAi } from "../hooks/useAi"
 import { useStore, type CloudModelEntry, type ModelEntry } from "../store"
 import { Button } from "./ui/button"
@@ -14,6 +14,19 @@ import { ScrollArea } from "./ui/scroll-area"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs"
 import { cn } from "../lib/utils"
 
+type ModelCategory = "chat" | "embedding" | "reranker"
+type ModelSource = "local" | "cloud"
+
+const DEFAULT_EMBEDDINGS = [
+  { id: "BAAI_bge-small-en-v1.5", rawId: "BAAI/bge-small-en-v1.5", name: "BAAI/bge-small-en-v1.5", model_type: "Embedding", model_size_mb: 133 },
+  { id: "nomic-ai_nomic-embed-text-v1.5", rawId: "nomic-ai/nomic-embed-text-v1.5", name: "nomic-ai/nomic-embed-text-v1.5", model_type: "Embedding", model_size_mb: 540 },
+]
+
+const DEFAULT_RERANKERS = [
+  { id: "cross-encoder_ms-marco-MiniLM-L-6-v2", rawId: "cross-encoder/ms-marco-MiniLM-L-6-v2", name: "cross-encoder/ms-marco-MiniLM-L-6-v2", model_type: "Reranker", model_size_mb: 91 },
+  { id: "BAAI_bge-reranker-base", rawId: "BAAI/bge-reranker-base", name: "BAAI/bge-reranker-base", model_type: "Reranker", model_size_mb: 1100 },
+]
+
 export function ModelManager() {
   const {
     modelManagerOpen,
@@ -24,11 +37,18 @@ export function ModelManager() {
     addCloudModel,
     deleteCloudModel,
     setLoadedModel,
+    setDownloadProgress,
   } = useStore()
   const { listModels, loadModel, unloadModel, downloadModel, deleteModel, testCloudModel } = useAi()
+  
+  const [activeCategory, setActiveCategory] = useState<ModelCategory>("chat")
+  const [activeSource, setActiveSource] = useState<ModelSource>("local")
+
   const [models, setModels] = useState<ModelEntry[]>([])
-  const [downloadUrl, setDownloadUrl] = useState("")
-  const [downloadId, setDownloadId] = useState("")
+  
+  // Single input for HuggingFace ID instead of separate url/id
+  const [localDownloadId, setLocalDownloadId] = useState("")
+  
   const [cloudName, setCloudName] = useState("")
   const [cloudVendor, setCloudVendor] = useState("OpenAI compatible")
   const [cloudBaseUrl, setCloudBaseUrl] = useState("")
@@ -37,11 +57,48 @@ export function ModelManager() {
   const [testResult, setTestResult] = useState<string>("")
   const [loading, setLoading] = useState(false)
 
+  // --- MOCK STATES FOR ACTIVE CATEGORIES ---
+  const [mockActiveEmbedding, setMockActiveEmbedding] = useState<any>(null)
+  const [mockActiveReranker, setMockActiveReranker] = useState<any>(null)
+
+  const [mockCloudEmbeddings, setMockCloudEmbeddings] = useState<any[]>([])
+  const [mockCloudRerankers, setMockCloudRerankers] = useState<any[]>([])
+  // --------------------------------------
+
   useEffect(() => {
     if (modelManagerOpen) {
       refreshModels()
     }
   }, [modelManagerOpen])
+
+  useEffect(() => {
+    if (downloadProgress && downloadProgress.percentage >= 100) {
+      const t = setTimeout(() => {
+        refreshModels()
+        setDownloadProgress(null)
+      }, 1000)
+      return () => clearTimeout(t)
+    }
+  }, [downloadProgress?.percentage])
+
+  const getEmbeddingsList = () => {
+    return DEFAULT_EMBEDDINGS.map(def => {
+      const downloaded = models.find(m => m.id === def.id)
+      return downloaded ? { ...downloaded, name: def.name, model_type: def.model_type, rawId: def.rawId, isDefault: true } : { ...def, has_model: false, has_tokenizer: false, isDefault: true }
+    })
+  }
+
+  const getRerankersList = () => {
+    return DEFAULT_RERANKERS.map(def => {
+      const downloaded = models.find(m => m.id === def.id)
+      return downloaded ? { ...downloaded, name: def.name, model_type: def.model_type, rawId: def.rawId, isDefault: true } : { ...def, has_model: false, has_tokenizer: false, isDefault: true }
+    })
+  }
+
+  const getChatModelsList = () => {
+    const defaultIds = [...DEFAULT_EMBEDDINGS, ...DEFAULT_RERANKERS].map(d => d.id)
+    return models.filter(m => !defaultIds.includes(m.id))
+  }
 
   async function refreshModels() {
     try {
@@ -53,60 +110,110 @@ export function ModelManager() {
   }
 
   async function handleLoad(modelId: string) {
-    setLoading(true)
-    try {
-      await loadModel(modelId)
-    } catch (e) {
-      console.error("Failed to load model:", e)
-    } finally {
-      setLoading(false)
+    if (activeCategory === "chat") {
+      setLoading(true)
+      try {
+        await loadModel(modelId)
+      } catch (e) {
+        console.error("Failed to load model:", e)
+      } finally {
+        setLoading(false)
+      }
+    } else if (activeCategory === "embedding") {
+      const m = getEmbeddingsList().find(x => x.id === modelId)
+      if (m) setMockActiveEmbedding({ id: m.id, name: m.name, modelType: m.model_type })
+    } else if (activeCategory === "reranker") {
+      const m = getRerankersList().find(x => x.id === modelId)
+      if (m) setMockActiveReranker({ id: m.id, name: m.name, modelType: m.model_type })
     }
   }
 
   async function handleUnload() {
-    setLoading(true)
-    try {
-      await unloadModel()
-    } catch (e) {
-      console.error("Failed to unload model:", e)
-    } finally {
-      setLoading(false)
+    if (activeCategory === "chat") {
+      setLoading(true)
+      try {
+        await unloadModel()
+      } catch (e) {
+        console.error("Failed to unload model:", e)
+      } finally {
+        setLoading(false)
+      }
+    } else if (activeCategory === "embedding") {
+      setMockActiveEmbedding(null)
+    } else if (activeCategory === "reranker") {
+      setMockActiveReranker(null)
     }
   }
 
-  async function handleDownload() {
-    if (!downloadUrl.trim() || !downloadId.trim()) return
+  async function handleDownload(customRawId?: string) {
+    const rawIdToDownload = typeof customRawId === "string" ? customRawId : localDownloadId.trim();
+    if (!rawIdToDownload) return
+    
+    // Replace slash with underscore so scan_models can see it in a single flat directory
+    const modelId = rawIdToDownload.replace(/\//g, "_")
+    const url = `https://huggingface.co/${rawIdToDownload}`
+    
     try {
-      await downloadModel(downloadId.trim(), downloadUrl.trim())
-      setDownloadUrl("")
-      setDownloadId("")
-      setTimeout(refreshModels, 2000)
+      await downloadModel(modelId, url)
+      setLocalDownloadId("")
     } catch (e) {
       console.error("Failed to download model:", e)
     }
   }
 
   async function handleDelete(modelId: string) {
-    try {
-      await deleteModel(modelId)
-      await refreshModels()
-    } catch (e) {
-      console.error("Failed to delete model:", e)
+    if (activeCategory === "chat") {
+      try {
+        await deleteModel(modelId)
+        await refreshModels()
+      } catch (e) {
+        console.error("Failed to delete model:", e)
+      }
+    } else if (activeCategory === "embedding") {
+      try {
+        await deleteModel(modelId)
+        if (mockActiveEmbedding?.id === modelId) setMockActiveEmbedding(null)
+        await refreshModels()
+      } catch (e) {
+        console.error("Failed to delete model:", e)
+      }
+    } else if (activeCategory === "reranker") {
+      try {
+        await deleteModel(modelId)
+        if (mockActiveReranker?.id === modelId) setMockActiveReranker(null)
+        await refreshModels()
+      } catch (e) {
+        console.error("Failed to delete model:", e)
+      }
     }
   }
 
-  function useCloudModel(model: CloudModelEntry) {
-    setLoadedModel({
-      id: `cloud:${model.id}`,
-      name: model.name,
-      modelType: `${model.vendor} · ${model.modelName}`,
-      hasTokenizer: false,
-      path: model.baseUrl,
-      source: "cloud",
-      baseUrl: model.baseUrl,
-      apiKey: model.apiKey,
-      modelName: model.modelName,
-    })
+  function useCloudModel(model: CloudModelEntry | any) {
+    if (activeCategory === "chat") {
+      setLoadedModel({
+        id: `cloud:${model.id}`,
+        name: model.name,
+        modelType: `${model.vendor} · ${model.modelName}`,
+        hasTokenizer: false,
+        path: model.baseUrl,
+        source: "cloud",
+        baseUrl: model.baseUrl,
+        apiKey: model.apiKey,
+        modelName: model.modelName,
+      })
+    } else if (activeCategory === "embedding") {
+      setMockActiveEmbedding({
+        id: `cloud:${model.id}`,
+        name: model.name,
+        modelType: `${model.vendor} · ${model.modelName}`,
+      })
+    } else if (activeCategory === "reranker") {
+      setMockActiveReranker({
+        id: `cloud:${model.id}`,
+        name: model.name,
+        modelType: `${model.vendor} · ${model.modelName}`,
+      })
+    }
   }
 
   async function handleAddCloudModel() {
@@ -121,7 +228,14 @@ export function ModelManager() {
       modelName: cloudModelName.trim(),
     }
 
-    addCloudModel(model)
+    if (activeCategory === "chat") {
+      addCloudModel(model)
+    } else if (activeCategory === "embedding") {
+      setMockCloudEmbeddings(prev => [...prev, model])
+    } else if (activeCategory === "reranker") {
+      setMockCloudRerankers(prev => [...prev, model])
+    }
+    
     useCloudModel(model)
     setCloudName("")
     setCloudVendor("OpenAI compatible")
@@ -131,7 +245,7 @@ export function ModelManager() {
     setTestResult("")
   }
 
-  async function handleTestCloudModel(model?: CloudModelEntry) {
+  async function handleTestCloudModel(model?: CloudModelEntry | any) {
     const baseUrl = model?.baseUrl ?? cloudBaseUrl.trim()
     const apiKey = model?.apiKey ?? cloudApiKey.trim()
     const modelName = model?.modelName ?? cloudModelName.trim()
@@ -149,193 +263,290 @@ export function ModelManager() {
     }
   }
 
+  const handleDeleteCloudModel = async (id: string) => {
+    if (activeCategory === "chat") {
+      await deleteCloudModel(id)
+    } else if (activeCategory === "embedding") {
+      setMockCloudEmbeddings(prev => prev.filter(m => m.id !== id))
+      if (mockActiveEmbedding?.id === `cloud:${id}`) setMockActiveEmbedding(null)
+    } else if (activeCategory === "reranker") {
+      setMockCloudRerankers(prev => prev.filter(m => m.id !== id))
+      if (mockActiveReranker?.id === `cloud:${id}`) setMockActiveReranker(null)
+    }
+  }
+
+  // Derived state for the UI
+  const currentActiveModel = 
+    activeCategory === "chat" ? loadedModel :
+    activeCategory === "embedding" ? mockActiveEmbedding : 
+    mockActiveReranker
+
+  const categoryLabel = 
+    activeCategory === "chat" ? "Chat Model" :
+    activeCategory === "embedding" ? "Embedding Model" : 
+    "Reranker Model"
+    
+  const displayLocalModels = 
+    activeCategory === "chat" ? getChatModelsList() :
+    activeCategory === "embedding" ? getEmbeddingsList() :
+    getRerankersList()
+    
+  const displayCloudModels = 
+    activeCategory === "chat" ? cloudModels :
+    activeCategory === "embedding" ? mockCloudEmbeddings :
+    mockCloudRerankers
+
   return (
     <Dialog open={modelManagerOpen} onOpenChange={setModelManagerOpen}>
-      <DialogContent className="max-w-3xl">
-        <DialogHeader>
-          <DialogTitle>Model Manager</DialogTitle>
+      <DialogContent className="max-w-5xl p-0 overflow-hidden flex flex-col h-[750px] bg-white border-gray-200">
+        <DialogHeader className="px-6 py-4 border-b border-gray-200 shrink-0">
+          <DialogTitle className="text-xl font-semibold text-gray-900">Settings Hub</DialogTitle>
         </DialogHeader>
 
-        {/* Loaded model */}
-        {loadedModel && (
-          <div className="rounded-lg border bg-muted/50 p-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium">Active: {loadedModel.name}</p>
-                <p className="text-xs text-muted-foreground">{loadedModel.modelType}</p>
-              </div>
-              <Button variant="outline" size="sm" onClick={handleUnload} disabled={loading}>
-                <Power className="mr-1.5 h-3.5 w-3.5" />
-                Unload
-              </Button>
-            </div>
+        <div className="flex flex-1 overflow-hidden">
+          {/* LEFT SIDEBAR */}
+          <div className="w-64 border-r border-gray-200 bg-gray-50/50 p-4 space-y-1.5 shrink-0">
+            <button
+              onClick={() => { setActiveCategory("chat"); setActiveSource("local"); }}
+              className={cn(
+                "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-colors",
+                activeCategory === "chat" ? "bg-gray-200 font-semibold text-gray-900" : "text-gray-600 hover:bg-gray-100"
+              )}
+            >
+              <MessageSquare className="h-4 w-4" />
+              💬 Chat Models (LLM)
+            </button>
+            <button
+              onClick={() => { setActiveCategory("embedding"); setActiveSource("local"); }}
+              className={cn(
+                "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-colors",
+                activeCategory === "embedding" ? "bg-gray-200 font-semibold text-gray-900" : "text-gray-600 hover:bg-gray-100"
+              )}
+            >
+              <Brain className="h-4 w-4" />
+              🧠 Embeddings (RAG)
+            </button>
+            <button
+              onClick={() => { setActiveCategory("reranker"); setActiveSource("local"); }}
+              className={cn(
+                "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-colors",
+                activeCategory === "reranker" ? "bg-gray-200 font-semibold text-gray-900" : "text-gray-600 hover:bg-gray-100"
+              )}
+            >
+              <Target className="h-4 w-4" />
+              🎯 Rerankers (RAG)
+            </button>
           </div>
-        )}
 
-        <Tabs defaultValue="local">
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="local">Local models</TabsTrigger>
-            <TabsTrigger value="cloud">Cloud models</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="local" className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h4 className="text-sm font-medium">Available Models</h4>
-              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={refreshModels}>
-                <RefreshCw className="h-3.5 w-3.5" />
-              </Button>
+          {/* RIGHT CONTENT AREA */}
+          <div className="flex-1 flex flex-col p-6 overflow-hidden bg-white">
+            {/* Active Model Card */}
+            <div className="mb-6 rounded-xl border border-gray-200 bg-white p-4 shadow-sm flex items-center justify-between shrink-0">
+              <div>
+                <p className="text-sm font-semibold text-gray-900">Active {categoryLabel}</p>
+                <p className="text-sm text-gray-500 mt-0.5">
+                  {currentActiveModel ? (
+                    <span className="flex items-center gap-1.5">
+                      <span className="h-2 w-2 rounded-full bg-green-500"></span>
+                      {currentActiveModel.name} <span className="text-xs text-gray-400">({currentActiveModel.modelType})</span>
+                    </span>
+                  ) : (
+                    "None selected"
+                  )}
+                </p>
+              </div>
+              {currentActiveModel && (
+                <Button variant="outline" size="sm" onClick={handleUnload} disabled={loading} className="rounded-xl">
+                  <Power className="mr-1.5 h-3.5 w-3.5" />
+                  Unload / Deactivate
+                </Button>
+              )}
             </div>
 
-            <ScrollArea className="h-48 rounded-lg border">
-              {models.length === 0 ? (
-                <p className="p-4 text-center text-sm text-muted-foreground">
-                  No models found. Download one below.
-                </p>
-              ) : (
-                <div className="divide-y">
-                  {models.map((m) => (
-                    <div key={m.id} className="flex items-center justify-between p-3">
-                      <div>
-                        <p className="text-sm font-medium">{m.name}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {m.model_type} &middot; {m.model_size_mb} MB
-                          {m.has_tokenizer ? " &middot; tokenizer" : ""}
-                        </p>
-                      </div>
-                      <div className="flex gap-1.5">
-                        {loadedModel?.id !== m.id && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleLoad(m.id)}
-                            disabled={loading || !m.has_model}
-                          >
-                            Load
-                          </Button>
-                        )}
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-destructive"
-                          onClick={() => handleDelete(m.id)}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
+            <Tabs value={activeSource} onValueChange={(v) => setActiveSource(v as ModelSource)} className="flex-1 flex flex-col min-h-0">
+              <TabsList className="grid w-full grid-cols-2 mb-4 shrink-0 rounded-xl bg-gray-100/80 p-1">
+                <TabsTrigger value="local" className="rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm">💻 Local Models</TabsTrigger>
+                <TabsTrigger value="cloud" className="rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm">☁️ Cloud / API</TabsTrigger>
+              </TabsList>
+
+              {/* LOCAL MODELS CONTENT */}
+              <TabsContent value="local" className="flex-1 flex flex-col min-h-0 space-y-4 data-[state=active]:flex mt-0 outline-none">
+                <div className="flex items-center justify-between shrink-0">
+                  <h4 className="text-sm font-semibold text-gray-900">Configured Local Models</h4>
+                  <Button variant="ghost" size="icon" className="h-7 w-7 text-gray-500" onClick={refreshModels}>
+                    <RefreshCw className="h-3.5 w-3.5" />
+                  </Button>
                 </div>
-              )}
-            </ScrollArea>
 
-            <div className="space-y-2">
-              <h4 className="text-sm font-medium">Download Model</h4>
-              <p className="text-xs text-muted-foreground">
-                Enter a HuggingFace model URL (e.g., https://huggingface.co/user/model)
-              </p>
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Model ID (e.g., phi-3-mini)"
-                  value={downloadId}
-                  onChange={(e) => setDownloadId(e.target.value)}
-                />
-                <Input
-                  placeholder="https://huggingface.co/..."
-                  value={downloadUrl}
-                  onChange={(e) => setDownloadUrl(e.target.value)}
-                />
-                <Button
-                  onClick={handleDownload}
-                  disabled={!downloadUrl.trim() || !downloadId.trim()}
-                >
-                  <Download className="mr-1.5 h-4 w-4" />
-                  Download
-                </Button>
-              </div>
+                <ScrollArea className="flex-1 rounded-xl border border-gray-200 bg-gray-50/30">
+                  {displayLocalModels.length === 0 ? (
+                    <p className="p-8 text-center text-sm text-gray-400">
+                      No local models configured. Download one below.
+                    </p>
+                  ) : (
+                    <div className="divide-y divide-gray-100">
+                      {displayLocalModels.map((m) => {
+                        const mId = m.rawId ? m.rawId.replace(/\//g, "_") : m.id;
+                        const isDownloading = downloadProgress && downloadProgress.model_id === mId;
 
-              {downloadProgress && (
-                <div className="space-y-1">
-                  <div className="flex justify-between text-xs text-muted-foreground">
-                    <span>{downloadProgress.file_name}</span>
-                    <span>{Math.round(downloadProgress.percentage)}%</span>
-                  </div>
-                  <div className="h-2 overflow-hidden rounded-full bg-muted">
-                    <div
-                      className={cn(
-                        "h-full bg-primary transition-all",
-                        downloadProgress.percentage >= 100 && "bg-green-500"
-                      )}
-                      style={{ width: `${downloadProgress.percentage}%` }}
+                        return (
+                          <div key={m.id} className="flex items-center justify-between py-2.5 px-4 hover:bg-gray-50/80 transition-colors">
+                            <div>
+                              <p className="text-sm font-medium text-gray-900">{m.name}</p>
+                              <p className="text-xs text-gray-500 mt-0.5">
+                                {isDownloading ? (
+                                  <span className="text-blue-600 font-medium">
+                                    Downloading: {Math.round(downloadProgress.bytes_downloaded / 1024 / 1024)}MB / {Math.round(downloadProgress.total_bytes / 1024 / 1024)}MB ({Math.round(downloadProgress.percentage)}%)
+                                  </span>
+                                ) : (
+                                  <>
+                                    {m.model_type} &middot; {m.model_size_mb} MB
+                                  </>
+                                )}
+                              </p>
+                            </div>
+                            <div className="flex gap-2">
+                              {!m.has_model ? (
+                                <Button
+                                  variant="default"
+                                  size="sm"
+                                  onClick={() => handleDownload(m.rawId || m.id)}
+                                  disabled={loading || isDownloading}
+                                  className="rounded-xl shadow-sm"
+                                >
+                                  {isDownloading ? (
+                                    <>
+                                      <RefreshCw className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                                      Downloading...
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Download className="mr-1.5 h-3.5 w-3.5" />
+                                      Download
+                                    </>
+                                  )}
+                                </Button>
+                              ) : currentActiveModel?.id !== m.id ? (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleLoad(m.id)}
+                                  disabled={loading}
+                                  className="rounded-xl shadow-sm"
+                                >
+                                  Load
+                                </Button>
+                              ) : null}
+                              {(m.has_model || !m.isDefault) && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 text-red-500 hover:bg-red-50 hover:text-red-600 rounded-lg"
+                                  onClick={() => handleDelete(m.id)}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </ScrollArea>
+
+                <div className="pt-2 shrink-0">
+                  <h4 className="text-sm font-semibold text-gray-900 mb-1.5">Download & Initialize</h4>
+                  <p className="text-xs text-gray-500 mb-3">
+                    Enter a HuggingFace Model ID (e.g., BAAI/bge-small-en-v1.5)
+                  </p>
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="HuggingFace Model ID"
+                      value={localDownloadId}
+                      onChange={(e) => setLocalDownloadId(e.target.value)}
+                      className="flex-1 rounded-xl border-gray-200 bg-white"
                     />
+                    <Button
+                      onClick={() => handleDownload(localDownloadId)}
+                      disabled={!localDownloadId.trim()}
+                      className="rounded-xl shadow-sm"
+                    >
+                      <Download className="mr-1.5 h-4 w-4" />
+                      Download
+                    </Button>
                   </div>
                 </div>
-              )}
-            </div>
-          </TabsContent>
+              </TabsContent>
 
-          <TabsContent value="cloud" className="space-y-4">
-            <ScrollArea className="h-40 rounded-lg border">
-              {cloudModels.length === 0 ? (
-                <p className="p-4 text-center text-sm text-muted-foreground">
-                  No cloud models configured.
-                </p>
-              ) : (
-                <div className="divide-y">
-                  {cloudModels.map((m) => (
-                    <div key={m.id} className="flex items-center justify-between p-3">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium">{m.name}</p>
-                        <p className="truncate text-xs text-muted-foreground">
-                          {m.vendor} &middot; {m.modelName} &middot; {m.baseUrl}
-                        </p>
-                      </div>
-                      <div className="flex shrink-0 gap-1.5">
-                        <Button variant="outline" size="sm" onClick={() => handleTestCloudModel(m)} disabled={loading}>
-                          <PlugZap className="mr-1.5 h-3.5 w-3.5" />
-                          Test
-                        </Button>
-                        <Button size="sm" onClick={() => useCloudModel(m)}>
-                          <Play className="mr-1.5 h-3.5 w-3.5" />
-                          Use
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-destructive"
-                          onClick={() => deleteCloudModel(m.id)}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
+              {/* CLOUD MODELS CONTENT */}
+              <TabsContent value="cloud" className="flex-1 flex flex-col min-h-0 space-y-4 data-[state=active]:flex mt-0 outline-none">
+                <h4 className="text-sm font-semibold text-gray-900 shrink-0">Configured Cloud Models</h4>
+                
+                <ScrollArea className="flex-1 rounded-xl border border-gray-200 bg-gray-50/30">
+                  {displayCloudModels.length === 0 ? (
+                    <p className="p-8 text-center text-sm text-gray-400">
+                      No cloud models configured.
+                    </p>
+                  ) : (
+                    <div className="divide-y divide-gray-100">
+                      {displayCloudModels.map((m) => (
+                        <div key={m.id} className="flex items-center justify-between py-2.5 px-4 hover:bg-gray-50/80 transition-colors">
+                          <div className="min-w-0 pr-4">
+                            <p className="truncate text-sm font-medium text-gray-900">{m.name}</p>
+                            <p className="truncate text-xs text-gray-500 mt-0.5">
+                              {m.vendor} &middot; {m.modelName}
+                            </p>
+                          </div>
+                          <div className="flex shrink-0 gap-2">
+                            <Button variant="outline" size="sm" onClick={() => handleTestCloudModel(m)} disabled={loading} className="rounded-xl shadow-sm">
+                              <PlugZap className="mr-1.5 h-3.5 w-3.5" />
+                              Test
+                            </Button>
+                            <Button size="sm" onClick={() => useCloudModel(m)} className="rounded-xl shadow-sm">
+                              <Play className="mr-1.5 h-3.5 w-3.5" />
+                              Use
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-red-500 hover:bg-red-50 hover:text-red-600 rounded-lg"
+                              onClick={() => handleDeleteCloudModel(m.id)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
-              )}
-            </ScrollArea>
+                  )}
+                </ScrollArea>
 
-            <div className="space-y-2">
-              <h4 className="text-sm font-medium">Add OpenAI-Compatible Model</h4>
-              <div className="grid grid-cols-2 gap-2">
-                <Input placeholder="Display name" value={cloudName} onChange={(e) => setCloudName(e.target.value)} />
-                <Input placeholder="Vendor" value={cloudVendor} onChange={(e) => setCloudVendor(e.target.value)} />
-                <Input placeholder="Base URL, e.g. https://api.openai.com" value={cloudBaseUrl} onChange={(e) => setCloudBaseUrl(e.target.value)} />
-                <Input placeholder="Model, e.g. gpt-4.1-mini" value={cloudModelName} onChange={(e) => setCloudModelName(e.target.value)} />
-                <Input className="col-span-2" placeholder="API key" type="password" value={cloudApiKey} onChange={(e) => setCloudApiKey(e.target.value)} />
-              </div>
-              <div className="flex items-center gap-2">
-                <Button variant="outline" onClick={() => handleTestCloudModel()} disabled={loading || !cloudBaseUrl.trim() || !cloudApiKey.trim() || !cloudModelName.trim()}>
-                  <PlugZap className="mr-1.5 h-4 w-4" />
-                  Test Connection
-                </Button>
-                <Button onClick={handleAddCloudModel} disabled={!cloudName.trim() || !cloudBaseUrl.trim() || !cloudApiKey.trim() || !cloudModelName.trim()}>
-                  <Cloud className="mr-1.5 h-4 w-4" />
-                  Save and Use
-                </Button>
-                {testResult && <p className="text-xs text-muted-foreground">{testResult}</p>}
-              </div>
-            </div>
-          </TabsContent>
-        </Tabs>
+                <div className="pt-2 shrink-0 space-y-3">
+                  <h4 className="text-sm font-semibold text-gray-900">Add OpenAI-Compatible Model</h4>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Input placeholder="Display name" value={cloudName} onChange={(e) => setCloudName(e.target.value)} className="rounded-xl border-gray-200" />
+                    <Input placeholder="Vendor" value={cloudVendor} onChange={(e) => setCloudVendor(e.target.value)} className="rounded-xl border-gray-200" />
+                    <Input placeholder="Base URL, e.g. https://api.openai.com" value={cloudBaseUrl} onChange={(e) => setCloudBaseUrl(e.target.value)} className="rounded-xl border-gray-200" />
+                    <Input placeholder="Model, e.g. gpt-4o-mini" value={cloudModelName} onChange={(e) => setCloudModelName(e.target.value)} className="rounded-xl border-gray-200" />
+                    <Input className="col-span-2 rounded-xl border-gray-200" placeholder="API key" type="password" value={cloudApiKey} onChange={(e) => setCloudApiKey(e.target.value)} />
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <Button variant="outline" onClick={() => handleTestCloudModel()} disabled={loading || !cloudBaseUrl.trim() || !cloudApiKey.trim() || !cloudModelName.trim()} className="rounded-xl shadow-sm">
+                      <PlugZap className="mr-1.5 h-4 w-4" />
+                      Test Connection
+                    </Button>
+                    <Button onClick={handleAddCloudModel} disabled={!cloudName.trim() || !cloudBaseUrl.trim() || !cloudApiKey.trim() || !cloudModelName.trim()} className="rounded-xl shadow-sm">
+                      <Cloud className="mr-1.5 h-4 w-4" />
+                      Save and Use
+                    </Button>
+                    {testResult && <p className="text-xs font-medium text-gray-600">{testResult}</p>}
+                  </div>
+                </div>
+              </TabsContent>
+            </Tabs>
+          </div>
+        </div>
       </DialogContent>
     </Dialog>
   )

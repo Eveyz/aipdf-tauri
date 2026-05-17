@@ -4,15 +4,18 @@ mod ai;
 mod models;
 mod state;
 mod db;
+mod vector_db;
+mod embedding;
+mod rag_pipeline;
 
 use state::AppState;
 use std::sync::Mutex;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let app_dir = dirs::data_dir()
+    let app_dir = dirs::home_dir()
         .unwrap_or_else(|| std::env::current_dir().unwrap())
-        .join("aipdf");
+        .join(".aipdf");
     
     if !app_dir.exists() {
         std::fs::create_dir_all(&app_dir).expect("Failed to create app directory");
@@ -20,6 +23,12 @@ pub fn run() {
 
     let db_path = app_dir.join("aipdf.db");
     let db = db::DbManager::new(db_path).expect("Failed to initialize database");
+
+    let vector_db = tauri::async_runtime::block_on(async {
+        let conn = vector_db::init_db().await.expect("Failed to initialize vector database");
+        vector_db::init_document_table(&conn, 384).await.expect("Failed to initialize vector database table");
+        conn
+    });
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -29,8 +38,12 @@ pub fn run() {
             pdf: Mutex::new(state::PdfState::default()),
             ai: Mutex::new(state::AiState::default()),
             db,
+            vector_db,
         })
         .invoke_handler(tauri::generate_handler![
+            commands::utils::get_file_hash,
+            rag_pipeline::process_pdf_page,
+            rag_pipeline::search_context,
             commands::pdf::open_pdf,
             commands::pdf::get_page_count,
             commands::pdf::render_page,

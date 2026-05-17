@@ -1,6 +1,7 @@
 pub mod pdf;
 pub mod ai;
 pub mod workspace;
+pub mod utils;
 
 #[derive(Debug, thiserror::Error)]
 pub enum CommandError {

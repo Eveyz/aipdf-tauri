@@ -18,16 +18,17 @@ pub async fn download_model(
     let model_dir = super::registry::models_dir().join(model_id);
     std::fs::create_dir_all(&model_dir)?;
 
-    // Files to download
-    let files = [
-        ("config.json", format!("{}/resolve/main/config.json", url)),
-        ("tokenizer.json", format!("{}/resolve/main/tokenizer.json", url)),
-        ("model.onnx", format!("{}/resolve/main/model.onnx", url)),
+    // Core files to download
+    let mut files = vec![
+        ("config.json".to_string(), format!("{}/resolve/main/config.json", url)),
+        ("tokenizer.json".to_string(), format!("{}/resolve/main/tokenizer.json", url)),
+        ("model.onnx".to_string(), format!("{}/resolve/main/model.onnx", url)),
     ];
 
     let client = reqwest::Client::new();
 
-    for (file_name, file_url) in &files {
+    for i in 0..files.len() {
+        let (file_name, file_url) = &files[i];
         let dest = model_dir.join(file_name);
 
         // Skip if already exists
@@ -35,10 +36,17 @@ pub async fn download_model(
             continue;
         }
 
-        let response = client.get(file_url).send().await?;
+        let mut response = client.get(file_url).send().await?;
+        
+        // If model.onnx fails, try the onnx/ subfolder which is common in sentence-transformers
+        if !response.status().is_success() && file_name == "model.onnx" {
+            let alt_url = format!("{}/resolve/main/onnx/model.onnx", url);
+            response = client.get(&alt_url).send().await?;
+        }
+
         if !response.status().is_success() {
             // Skip files that don't exist (e.g., config.json might be optional)
-            if *file_name == "config.json" || *file_name == "tokenizer.json" {
+            if file_name == "config.json" || file_name == "tokenizer.json" {
                 continue;
             }
             return Err(format!("Failed to download {}: HTTP {}", file_name, response.status()).into());
@@ -52,6 +60,8 @@ pub async fn download_model(
 
         use futures::StreamExt;
         use std::io::Write;
+        
+        let mut last_percentage = -1.0;
 
         while let Some(chunk) = stream.next().await {
             let chunk = chunk?;
@@ -64,15 +74,28 @@ pub async fn download_model(
                 0.0
             };
 
-            let _ = app.emit("download-progress", DownloadProgress {
-                model_id: model_id.to_string(),
-                file_name: file_name.to_string(),
-                bytes_downloaded,
-                total_bytes,
-                percentage,
-            });
+            // Throttle events to avoid overwhelming the frontend (only emit every 1% or on completion)
+            if percentage - last_percentage >= 1.0 || bytes_downloaded == total_bytes {
+                let _ = app.emit("download-progress", DownloadProgress {
+                    model_id: model_id.to_string(),
+                    file_name: file_name.to_string(),
+                    bytes_downloaded,
+                    total_bytes,
+                    percentage,
+                });
+                last_percentage = percentage;
+            }
         }
     }
+
+    // After all files successfully downloaded, emit a final 100% progress for the model so the UI knows it's fully done
+    let _ = app.emit("download-progress", DownloadProgress {
+        model_id: model_id.to_string(),
+        file_name: "complete".to_string(),
+        bytes_downloaded: 1,
+        total_bytes: 1,
+        percentage: 100.0,
+    });
 
     Ok(model_dir)
 }

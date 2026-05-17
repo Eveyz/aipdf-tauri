@@ -25,7 +25,7 @@ thiserror = "2"
 tokio = { version = "1", features = ["full"] }
 dirs = "6"
 ort = { version = "2.0.0-rc.12", features = ["download-binaries", "load-dynamic", "ndarray"] }
-tokenizers = "0.21"
+tokenizers = "0.22"
 futures = "0.3"
 uuid = { version = "1", features = ["v4"] }
 reqwest = { version = "0.12", features = ["json", "stream"] }
@@ -34,3 +34,8 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 chrono = { version = "0.4", features = ["serde"] }
 futures-util = "0.3"
 ndarray = "0.17"
+lancedb = "0.29.0"
+arrow-schema = "58.3.0"
+arrow-array = "58.3.0"
+blake3 = "1.8.5"
+text-splitter = { version = "0.30.1", features = ["tokenizers"] }

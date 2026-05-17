@@ -22,6 +22,7 @@ pub struct AiState {
     pub tokenizer: Option<AiTokenizer>,
     pub is_generating: bool,
     pub cancel_flag: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+    pub embedding_engine: Option<crate::embedding::EmbeddingEngine>,
 }
 
 impl Default for AiState {
@@ -31,6 +32,7 @@ impl Default for AiState {
             tokenizer: None,
             is_generating: false,
             cancel_flag: None,
+            embedding_engine: None,
         }
     }
 }
@@ -39,4 +41,5 @@ pub struct AppState {
     pub pdf: Mutex<PdfState>,
     pub ai: Mutex<AiState>,
     pub db: crate::db::DbManager,
+    pub vector_db: lancedb::Connection,
 }

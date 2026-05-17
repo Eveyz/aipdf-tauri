@@ -45,7 +45,7 @@ pub fn scan_models() -> Result<Vec<ModelEntry>, Box<dyn std::error::Error>> {
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_default();
 
-        let has_model = path.join("model.onnx").exists();
+        let has_model = path.join("model.onnx").exists() || path.join("onnx/model.onnx").exists();
         let has_tokenizer = path.join("tokenizer.json").exists();
 
         // Read config.json for model type and name
@@ -66,8 +66,12 @@ pub fn scan_models() -> Result<Vec<ModelEntry>, Box<dyn std::error::Error>> {
         };
 
         // Calculate model file size
-        let model_size_mb = if has_model {
+        let model_size_mb = if path.join("model.onnx").exists() {
             std::fs::metadata(path.join("model.onnx"))
+                .map(|m| m.len() / (1024 * 1024))
+                .unwrap_or(0)
+        } else if path.join("onnx/model.onnx").exists() {
+            std::fs::metadata(path.join("onnx/model.onnx"))
                 .map(|m| m.len() / (1024 * 1024))
                 .unwrap_or(0)
         } else {
