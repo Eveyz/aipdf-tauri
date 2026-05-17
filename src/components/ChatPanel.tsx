@@ -18,6 +18,7 @@ import {
   Circle,
 } from "lucide-react"
 import ReactMarkdown from "react-markdown"
+import remarkGfm from "remark-gfm"
 import { useAi } from "../hooks/useAi"
 import { useStore, type ChatContext } from "../store"
 import { cn } from "../lib/utils"
@@ -30,23 +31,56 @@ import {
   SelectValue,
 } from "./ui/select"
 
+const MarkdownRenderer = ({ content }: { content: string }) => {
+  return (
+    <div className="prose prose-sm max-w-full text-gray-800 text-[13px] leading-relaxed overflow-x-auto">
+      <ReactMarkdown 
+        remarkPlugins={[remarkGfm]}
+        components={{
+          h1: ({node, ...props}) => <h1 className="text-base font-bold text-gray-950 mt-4 mb-2" {...props} />,
+          h2: ({node, ...props}) => <h2 className="text-[14px] font-semibold text-gray-900 mt-3 mb-1.5" {...props} />,
+          h3: ({node, ...props}) => <h3 className="text-[13px] font-medium text-gray-800 mt-2 mb-1" {...props} />,
+          table: ({node, ...props}) => (
+            <div className="overflow-x-auto my-3 border border-gray-200 rounded-lg shadow-sm">
+              <table className="min-w-full divide-y divide-gray-200 text-[12px]" {...props} />
+            </div>
+          ),
+          thead: ({node, ...props}) => <thead className="bg-gray-50 text-gray-900 font-semibold" {...props} />,
+          th: ({node, ...props}) => <th className="px-3 py-2 text-left" {...props} />,
+          td: ({node, ...props}) => <td className="px-3 py-2 text-gray-600 border-t border-gray-100" {...props} />,
+          ul: ({node, ...props}) => <ul className="list-disc pl-5 my-2 space-y-1" {...props} />,
+          ol: ({node, ...props}) => <ol className="list-decimal pl-5 my-2 space-y-1" {...props} />,
+          li: ({node, ...props}) => <li className="text-gray-700" {...props} />,
+          strong: ({node, ...props}) => <strong className="font-bold text-gray-950" {...props} />,
+          code: ({node, ...props}) => <code className="bg-gray-100 text-pink-600 px-1 py-0.5 rounded font-mono text-[11px]" {...props} />,
+          pre: ({node, ...props}) => (
+            <pre className="bg-gray-50 border border-gray-100 rounded-lg p-3 my-2 overflow-x-auto custom-scrollbar" {...props} />
+          ),
+        }}
+      >
+        {content}
+      </ReactMarkdown>
+    </div>
+  )
+}
+
 // Context pill for context display (file, page, text)
 function ContextPill({ ctx, onRemove }: { ctx: ChatContext, onRemove?: (id: string) => void }) {
-  const iconChar = ctx.type === "file" ? "📁" : ctx.type === "page" ? "🔖" : "📝"
+  const icon = ctx.type === "file" ? <MessageSquare className="w-3 h-3 text-blue-500" /> : ctx.type === "page" ? <Plus className="w-3 h-3 text-orange-500" /> : <RotateCcw className="w-3 h-3 text-green-500" />
 
   return (
-    <span className="flex items-center gap-1.5 px-2 py-1 bg-white border border-slate-200 rounded shadow-sm text-[11px] text-slate-600 font-mono max-w-[180px]">
-      <span className="shrink-0">{iconChar}</span>
+    <div className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 border border-gray-200 rounded-md shadow-[0_1px_2px_rgba(0,0,0,0.02)] text-[11px] text-gray-600 font-medium max-w-[180px] animate-in fade-in zoom-in duration-200">
+      <span className="shrink-0">{icon}</span>
       <span className="truncate">{ctx.label || ctx.content}</span>
       {onRemove && (
         <button
           onClick={() => onRemove(ctx.id)}
-          className="h-4 w-4 shrink-0 flex items-center justify-center rounded-full hover:bg-gray-100 hover:text-gray-900 cursor-pointer transition-colors ml-0.5"
+          className="h-3.5 w-3.5 shrink-0 flex items-center justify-center rounded hover:bg-gray-200 text-gray-400 hover:text-gray-900 transition-colors ml-0.5"
         >
           <X className="h-2.5 w-2.5" />
         </button>
       )}
-    </span>
+    </div>
   )
 }
 
@@ -87,7 +121,7 @@ function ThinkingIndicator({ isStreaming, isWaiting }: { isStreaming: boolean, i
 }
 
 // Action bar that appears on hover
-function ActionBar({ content, onRetry }: { content: string, onRetry?: () => void }) {
+function ActionBar({ content, onRetry, onToggleRaw, isRaw }: { content: string, onRetry?: () => void, onToggleRaw?: () => void, isRaw?: boolean }) {
   const [copied, setCopied] = useState(false)
 
   async function handleCopy() {
@@ -109,6 +143,16 @@ function ActionBar({ content, onRetry }: { content: string, onRetry?: () => void
           title="Regenerate"
         >
           <RotateCcw className="w-3.5 h-3.5" />
+        </button>
+        <button
+          onClick={onToggleRaw}
+          className={cn(
+            "p-1.5 rounded-md transition-colors cursor-pointer outline-none focus-visible:ring-1 focus-visible:ring-slate-200",
+            isRaw ? "text-blue-600 bg-blue-50" : "text-gray-400 hover:text-gray-700 hover:bg-gray-100"
+          )}
+          title="Toggle Raw Text"
+        >
+          <Square className="w-3.5 h-3.5" />
         </button>
         <button
           onClick={handleCopy}
@@ -140,6 +184,7 @@ export function ChatPanel() {
     cloudModels,
     setLoadedModel,
     chatContexts,
+    addChatContext,
     removeChatContext,
     clearChatContexts,
     sessions,
@@ -150,19 +195,45 @@ export function ChatPanel() {
     deleteSession,
     renameSession,
     setShowSessions,
+    pdfInfo,
+    currentPage,
+    lastPdfPath,
   } = useStore()
 
   const [input, setInput] = useState("")
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null)
   const [editName, setEditName] = useState("")
   const [isSessionsExpanded, setIsSessionsExpanded] = useState(false)
+  const [showContextMenu, setShowContextMenu] = useState(false)
+  const [rawMessageIds, setRawMessageIds] = useState<Set<string>>(new Set())
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const contextMenuRef = useRef<HTMLDivElement>(null)
 
   const displaySessions = isSessionsExpanded ? sessions : sessions.slice(0, 3)
 
   const scrollToBottom = (behavior: ScrollBehavior = "auto") => {
     messagesEndRef.current?.scrollIntoView({ behavior })
   }
+
+  const toggleRaw = (id: string) => {
+    setRawMessageIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  // Close context menu when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (contextMenuRef.current && !contextMenuRef.current.contains(event.target as Node)) {
+        setShowContextMenu(false)
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside)
+    return () => document.removeEventListener("mousedown", handleClickOutside)
+  }, [])
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -178,7 +249,35 @@ export function ChatPanel() {
     }
   }, [activeSessionId])
 
-  // Auto-generate title for new sessions
+  async function handleAddCurrentPage() {
+    if (!pdfInfo) return
+    setShowContextMenu(false)
+    setInput(prev => prev.replace(/@$/, ""))
+    try {
+      const { invoke } = await import("@tauri-apps/api/core")
+      const result = await invoke<any>("get_page_text", { pageIndex: currentPage })
+      addChatContext({
+        type: "page",
+        content: result.full_text || `Content of page ${currentPage + 1}`,
+        label: `Page ${currentPage + 1}`,
+        id: crypto.randomUUID(),
+      })
+    } catch (e) {
+      console.error("Failed to add page context:", e)
+    }
+  }
+
+  async function handleAddFullDocument() {
+    if (!pdfInfo || !lastPdfPath) return
+    setShowContextMenu(false)
+    setInput(prev => prev.replace(/@$/, ""))
+    addChatContext({
+      type: "file",
+      content: `Full document: ${pdfInfo.fileName}`,
+      label: pdfInfo.fileName,
+      id: crypto.randomUUID(),
+    })
+  }
 
   async function handleSend() {
     const prompt = input.trim()
@@ -228,6 +327,9 @@ export function ChatPanel() {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault()
       handleSend()
+    }
+    if (e.key === "@") {
+      setShowContextMenu(true)
     }
   }
 
@@ -300,7 +402,6 @@ export function ChatPanel() {
       {/* Sessions list */}
       {showSessions && (
         <div className="shrink-0 border-b bg-gray-50/30 w-full overflow-hidden">
-          {/* Scrollable Wrapper */}
           <div className={`flex flex-col gap-1 transition-all duration-300 py-1 w-full ${
             isSessionsExpanded 
               ? 'max-h-[30vh] overflow-y-auto custom-scrollbar pr-1' 
@@ -316,13 +417,11 @@ export function ChatPanel() {
                     session.id === activeSessionId ? "bg-gray-100 border-gray-200" : "hover:bg-gray-100"
                   }`}
                 >
-                  {/* Selection Click Area - Sits behind everything */}
                   <div 
                     className="absolute inset-0 z-0 cursor-pointer"
                     onClick={() => switchSession(session.id)}
                   />
 
-                  {/* Content Wrapper - Floating above the click area */}
                   <div className="relative z-10 flex items-center gap-2 px-2 py-1 w-full min-w-0 pointer-events-none overflow-hidden">
                     <Circle className={`h-2 w-2 shrink-0 mt-[1px] ${session.id === activeSessionId ? "text-primary" : "text-gray-400"}`} />
                     
@@ -350,7 +449,6 @@ export function ChatPanel() {
                       )}
                     </div>
                     
-                    {/* Action Icons - Also floating above, needs pointer-events-auto */}
                     <div 
                       className={`absolute right-1 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity pointer-events-auto ${editingSessionId === session.id ? "hidden" : ""}`}
                       onClick={(e) => e.stopPropagation()}
@@ -390,7 +488,6 @@ export function ChatPanel() {
             )}
           </div>
           
-          {/* Toggle Button - Kept outside scrollable wrapper */}
           {sessions.length > 3 && (
             <button 
               onClick={() => setIsSessionsExpanded(!isSessionsExpanded)}
@@ -429,7 +526,6 @@ export function ChatPanel() {
               )}
             >
               {msg.role === "user" ? (
-                /* User message */
                 <div className="max-w-[92%] flex flex-col items-end min-w-0 overflow-hidden">
                   {msg.contexts && msg.contexts.length > 0 && (
                     <div className="flex flex-wrap justify-end gap-1.5 mb-2 w-full overflow-hidden">
@@ -439,69 +535,127 @@ export function ChatPanel() {
                     </div>
                   )}
                   <div className="bg-[#F8F9FB] border border-slate-100 px-3 py-1.5 rounded-xl shadow-sm overflow-hidden break-words w-fit max-w-full">
-                    <p className="text-[13px] text-gray-800 leading-relaxed whitespace-pre-wrap">{msg.content}</p>
+                    <p className="text-[13px] text-gray-800 leading-relaxed whitespace-normal break-words [overflow-wrap:anywhere]">{msg.content}</p>
                   </div>
                 </div>
               ) : (
-                /* AI message */
-                <div className="max-w-[95%] flex flex-col min-w-0 overflow-hidden">
+                <div className="max-w-[95%] flex flex-col min-w-0 overflow-hidden w-full">
                   <ThinkingIndicator isStreaming={false} />
-                  <div className="prose prose-sm dark:prose-invert max-w-full text-xs leading-relaxed break-words overflow-hidden">
-                    <ReactMarkdown>{msg.content}</ReactMarkdown>
+                  <div className="w-full overflow-x-auto custom-scrollbar pb-1">
+                    {rawMessageIds.has(msg.id) ? (
+                      <pre className="text-[11px] font-mono bg-gray-50 p-3 rounded-lg border border-gray-100 overflow-x-auto whitespace-pre-wrap break-words text-gray-600 leading-relaxed">
+                        {msg.content}
+                      </pre>
+                    ) : (
+                      <MarkdownRenderer content={msg.content} />
+                    )}
                   </div>
                   <div className="w-full overflow-hidden">
-                    <ActionBar content={msg.content} onRetry={() => handleRetry(idx)} />
+                    <ActionBar 
+                      content={msg.content} 
+                      onRetry={() => handleRetry(idx)} 
+                      onToggleRaw={() => toggleRaw(msg.id)}
+                      isRaw={rawMessageIds.has(msg.id)}
+                    />
                   </div>
                 </div>
               )}
             </div>
           ))}
 
-          {/* Streaming message or Loading state */}
           {(streamingToken || isGenerating) && (
             <div className="flex justify-start w-full px-4 min-w-0 overflow-hidden">
               <div className="max-w-[95%] flex flex-col min-w-0 overflow-hidden w-full">
                 <ThinkingIndicator isStreaming={!!streamingToken} isWaiting={!streamingToken} />
                 {streamingToken && (
-                  <div className="prose prose-sm dark:prose-invert max-w-full text-xs leading-relaxed break-words overflow-hidden">
-                    <ReactMarkdown>{streamingToken}</ReactMarkdown>
+                  <div className="w-full overflow-x-auto custom-scrollbar pb-1">
+                    {rawMessageIds.has("streaming") ? (
+                      <pre className="text-[11px] font-mono bg-gray-50 p-3 rounded-lg border border-gray-100 overflow-x-auto whitespace-pre-wrap break-words text-gray-600 leading-relaxed">
+                        {streamingToken}
+                      </pre>
+                    ) : (
+                      <MarkdownRenderer content={streamingToken} />
+                    )}
+                    <ActionBar 
+                      content={streamingToken} 
+                      onToggleRaw={() => toggleRaw("streaming")}
+                      isRaw={rawMessageIds.has("streaming")}
+                    />
                   </div>
                 )}
               </div>
             </div>
           )}
           
-          {/* Bottom marker for auto-scrolling */}
           <div ref={messagesEndRef} className="h-0" />
         </div>
       </ScrollArea>
 
       {/* Input area */}
-      <div className="shrink-0 w-full overflow-hidden">
-        {/* Context pills (pending) */}
-        {chatContexts.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 px-3 pt-2 pb-1 w-full max-w-full overflow-hidden">
-            {chatContexts.map((ctx) => (
-              <ContextPill key={ctx.id} ctx={ctx} onRemove={removeChatContext} />
-            ))}
-          </div>
-        )}
+      <div className="shrink-0 w-full p-4 pt-0">
+        <div className="relative w-full">
+          {showContextMenu && (
+            <div 
+              ref={contextMenuRef}
+              className="absolute bottom-full left-0 mb-3 w-56 bg-white border border-gray-200 rounded-lg shadow-xl py-1.5 z-[100] animate-in fade-in slide-in-from-bottom-2 duration-200"
+            >
+              <div className="px-3 py-1 text-[10px] font-bold text-gray-400 uppercase tracking-tight">Attach Context</div>
+              <button 
+                onClick={handleAddCurrentPage}
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-gray-700 hover:bg-blue-50 hover:text-blue-600 transition-colors"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span className="flex-1 text-left font-medium">Current Page</span>
+                <span className="text-[10px] text-gray-400 font-mono">p.{currentPage + 1}</span>
+              </button>
+              <button 
+                onClick={handleAddFullDocument}
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-gray-700 hover:bg-blue-50 hover:text-blue-600 transition-colors"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span className="flex-1 text-left font-medium">Full Document</span>
+                <span className="text-[10px] text-gray-400 font-mono">PDF</span>
+              </button>
+              <div className="h-px bg-gray-100 my-1" />
+              <div className="px-3 py-1 text-[10px] font-medium text-gray-300 italic">More sources coming soon...</div>
+            </div>
+          )}
 
-        <div className="p-2 w-full overflow-hidden">
-          <div className="relative rounded-xl border border-gray-200/60 bg-gray-50/50 focus-within:border-gray-300 focus-within:bg-white transition-colors w-full overflow-hidden">
+          <div className="relative flex flex-col rounded-xl border border-gray-200 bg-white shadow-[0_2px_12px_rgba(0,0,0,0.03)] focus-within:border-blue-400/60 focus-within:ring-4 focus-within:ring-blue-500/5 transition-all overflow-hidden">
+            {chatContexts.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 px-3 pt-3">
+                {chatContexts.map((ctx) => (
+                  <ContextPill key={ctx.id} ctx={ctx} onRemove={removeChatContext} />
+                ))}
+              </div>
+            )}
+
             <textarea
-              className="min-h-[56px] w-full resize-none bg-transparent px-3 py-2.5 text-sm font-normal outline-none placeholder:text-muted-foreground/50 disabled:cursor-not-allowed disabled:opacity-50"
+              className="min-h-[100px] w-full resize-none bg-transparent px-3.5 py-3 text-[13px] font-normal outline-none placeholder:text-gray-400 leading-relaxed"
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={loadedModel ? "Ask about the PDF..." : "Load a model first..."}
+              placeholder={loadedModel ? "Ask a question or type @ to add context..." : "Load a model first..."}
               disabled={!loadedModel}
             />
 
-            <div className="flex items-center justify-between px-2.5 py-1.5 w-full overflow-hidden">
-              <div className="flex items-center gap-1 min-w-0 flex-1 overflow-hidden">
+            <div className="flex items-center justify-between px-2.5 py-2 bg-gray-50/50 border-t border-gray-100">
+              <div className="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden">
+                <button
+                  onClick={() => setShowContextMenu(!showContextMenu)}
+                  className={cn(
+                    "h-7 w-7 flex items-center justify-center rounded-md border border-gray-200 bg-white shadow-sm hover:border-blue-400/50 hover:text-blue-600 transition-all shrink-0",
+                    showContextMenu && "border-blue-400/50 text-blue-600 ring-2 ring-blue-500/5"
+                  )}
+                  title="Add context"
+                >
+                  <Plus className={cn("w-3.5 h-3.5 transition-transform duration-200", showContextMenu && "rotate-45")} />
+                </button>
+
+                <div className="h-4 w-px bg-gray-200 mx-1 shrink-0" />
+
                 <Select value={loadedModel?.id} onValueChange={handleModelSelect}>
-                  <SelectTrigger className="h-6 min-w-0 border-0 px-1.5 py-0 text-[11px] font-normal shadow-none bg-transparent hover:bg-accent/50 rounded transition-colors w-full">
+                  <SelectTrigger className="h-7 min-w-0 border-0 px-2 py-0 text-[11px] font-semibold shadow-none bg-transparent hover:bg-white hover:shadow-sm rounded-md transition-all">
                     <SelectValue placeholder="Select model" />
                   </SelectTrigger>
                   <SelectContent className="max-w-[240px]">
@@ -523,20 +677,20 @@ export function ChatPanel() {
                 </Select>
               </div>
 
-              <div className="flex items-center gap-0.5 shrink-0 ml-2">
+              <div className="flex items-center gap-1.5 shrink-0 ml-2">
                 {chatMessages.length > 0 && (
                   <button
-                    className="h-6 w-6 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors shrink-0"
+                    className="h-7 w-7 flex items-center justify-center rounded-md text-gray-400 hover:text-red-500 hover:bg-white hover:shadow-sm transition-all shrink-0"
                     onClick={clearChat}
                     title="Clear chat"
                   >
-                    <Trash2 className="h-3 w-3" />
+                    <Trash2 className="h-3.5 w-3.5" />
                   </button>
                 )}
 
                 {isGenerating ? (
                   <button
-                    className="h-6 w-6 flex items-center justify-center rounded text-destructive hover:bg-destructive/10 transition-colors shrink-0"
+                    className="h-7 w-7 flex items-center justify-center rounded-md bg-red-50 text-red-500 shadow-sm hover:bg-red-100 transition-all shrink-0"
                     onClick={stopGeneration}
                     title="Stop"
                   >
@@ -544,16 +698,18 @@ export function ChatPanel() {
                   </button>
                 ) : (
                   <button
-                    className={`h-6 w-6 flex items-center justify-center rounded transition-colors shrink-0 ${
+                    className={cn(
+                      "h-7 px-3.5 flex items-center justify-center gap-1.5 rounded-md text-xs font-bold transition-all shadow-sm shrink-0",
                       !loadedModel || !input.trim()
-                        ? "text-muted-foreground/40 cursor-not-allowed"
-                        : "text-foreground hover:bg-accent/50"
-                    }`}
+                        ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+                        : "bg-blue-600 text-white hover:bg-blue-700 active:scale-[0.98]"
+                    )}
                     onClick={handleSend}
                     disabled={!loadedModel || !input.trim()}
                     title="Send"
                   >
-                    <Send className="h-3.5 w-3.5" />
+                    <Send className="h-3 w-3" />
+                    <span>Send</span>
                   </button>
                 )}
               </div>

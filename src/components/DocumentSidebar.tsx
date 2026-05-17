@@ -98,7 +98,7 @@ function OutlineItemRow({ item }: { item: OutlineItem }) {
       </div>
       {hasChildren && isOpen && (
         <div className="w-full">
-          {item.items.map((subItem, i) => (
+          {item.items?.map((subItem, i) => (
             <OutlineItemRow key={`${subItem.title}-${i}`} item={subItem} />
           ))}
         </div>

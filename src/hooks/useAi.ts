@@ -59,9 +59,9 @@ export function useAi() {
     const state = useStore.getState()
     const { loadedModel, activeWorkspaceId } = state
     let { activeSessionId } = state
-    
+
     if (!loadedModel) throw new Error("No model loaded")
-    
+
     // If no active session, try to find one or create one for the active workspace
     if (!activeSessionId && activeWorkspaceId) {
       const sessions = useStore.getState().sessions
@@ -72,15 +72,12 @@ export function useAi() {
         activeSessionId = await useStore.getState().createSession()
       }
     }
-    
+
     if (!activeSessionId) throw new Error("No active chat session available. Please open a workspace.")
 
-    const wordCount = text.trim().split(/\s+/).length
-    const isDictionaryMode = wordCount <= 3
-    
     let systemPrompt = `Role: You are an expert translator and built-in dictionary module, mimicking the precise, elegant, and minimalist UI style of Apple's "Lookup" and "Translate" system features.
 
-Task: Analyze the input. If it is a single word or short phrase, provide a lexicographical dictionary definition. If it is a full sentence or paragraph, provide a direct, natural translation. 
+Task: Analyze the input. If it is a single word or short phrase, provide a lexicographical dictionary definition. If it is a full sentence or paragraph, provide a direct, natural translation into ${targetLanguage}. 
 
 Constraint: Do not include any conversational filler, introductory text, or markdown code blocks (\`\`\`). Output ONLY the raw formatted markdown text.
 
@@ -90,25 +87,25 @@ Use this exact template:
 **[Word/Phrase]**
 *[Part of Speech]*
 
-• **[Chinese Translation]** [Core definition in Chinese]
+• **[Translation into ${targetLanguage}]** [Core definition in ${targetLanguage}]
   *English Definition:* [Concise English definition]
   
   **Synonyms:** [synonym 1], [synonym 2], [synonym 3]
 
 ---
 CRITERIA 2: If input is a SENTENCE / PARAGRAPH (Translation Mode):
-Do NOT include labels like "Translation:", "Result:", or word breakdowns. Output ONLY the beautifully translated Chinese text, ensuring it is contextually accurate, natural, and elegant (matching the style of professional literature). If the text contains multiple paragraphs, maintain the paragraph breaks.
+Do NOT include labels like "Translation:", "Result:", or word breakdowns. Output ONLY the beautifully translated ${targetLanguage} text, ensuring it is contextually accurate, natural, and elegant (matching the style of professional literature). If the text contains multiple paragraphs, maintain the paragraph breaks.
 ---`
 
     const prompt = `Now, analyze, translate, and format the following input: "${text}"`
 
     useStore.getState().setIsTranslating(true)
-    
+
     return new Promise(async (resolve, reject) => {
       let result = ""
       const unlisten = await listen<TokenPayload>("ai-token", (event) => {
         const { token, is_final } = event.payload
-        
+
         if (token) {
           result += token
         }
@@ -142,10 +139,10 @@ Do NOT include labels like "Translation:", "Result:", or word breakdowns. Output
             persist: false,
           })
         } else {
-          await invoke("generate", { 
+          await invoke("generate", {
             sessionId: activeSessionId,
-            prompt: `${systemPrompt}\n\nUser: ${prompt}`, 
-            maxTokens: 500, 
+            prompt: `${systemPrompt}\n\nUser: ${prompt}`,
+            maxTokens: 500,
             temperature: 0.3,
             persist: false,
           })
@@ -182,7 +179,7 @@ Do NOT include labels like "Translation:", "Result:", or word breakdowns. Output
       // Send raw messages and let backend handle enrichment for the API call
       const messages = [
         { id: "system", role: "system" as const, content: "" }, // Placeholder, backend handles system prompt
-        ...currentMessages.filter(m => m.role !== "system").map(m => ({
+        ...currentMessages.map(m => ({
           id: m.id,
           role: m.role,
           content: m.content
@@ -201,11 +198,11 @@ Do NOT include labels like "Translation:", "Result:", or word breakdowns. Output
         persist: true,
       })
     } else {
-      await invoke("generate", { 
+      await invoke("generate", {
         sessionId: activeSessionId,
-        prompt, 
+        prompt,
         contexts,
-        maxTokens, 
+        maxTokens,
         temperature,
         persist: true,
       })

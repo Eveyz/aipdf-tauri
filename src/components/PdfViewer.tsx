@@ -31,6 +31,7 @@ const resetHash = () => {
 import { useAi } from "../hooks/useAi"
 
 import ReactMarkdown from "react-markdown"
+import remarkGfm from "remark-gfm"
 
 function AddPageContextButton() {
   const { currentPage, pdfInfo, addChatContext, setChatOpen } = useStore()
@@ -170,12 +171,30 @@ function TooltipForm({
                   <div className="h-4 bg-gray-100 rounded w-2/3" />
                 </div>
               ) : (
-                <div className={cn(
-                  "text-gray-700 leading-relaxed prose prose-sm prose-slate max-w-none",
-                  isSingleWord ? "text-sm" : "text-[13px]"
-                )}>
+                <div className="prose prose-sm max-w-full text-gray-800 text-[13px] leading-relaxed overflow-x-auto">
                   {translation ? (
-                    <ReactMarkdown>{translation}</ReactMarkdown>
+                    <ReactMarkdown 
+                      remarkPlugins={[remarkGfm]}
+                      components={{
+                        h1: ({node, ...props}) => <h1 className="text-base font-bold text-gray-950 mt-4 mb-2" {...props} />,
+                        h2: ({node, ...props}) => <h2 className="text-[14px] font-semibold text-gray-900 mt-3 mb-1.5" {...props} />,
+                        h3: ({node, ...props}) => <h3 className="text-[13px] font-medium text-gray-800 mt-2 mb-1" {...props} />,
+                        table: ({node, ...props}) => (
+                          <div className="overflow-x-auto my-3 border border-gray-200 rounded-lg shadow-sm">
+                            <table className="min-w-full divide-y divide-gray-200 text-[12px]" {...props} />
+                          </div>
+                        ),
+                        thead: ({node, ...props}) => <thead className="bg-gray-50 text-gray-900 font-semibold" {...props} />,
+                        th: ({node, ...props}) => <th className="px-3 py-2 text-left" {...props} />,
+                        td: ({node, ...props}) => <td className="px-3 py-2 text-gray-600 border-t border-gray-100" {...props} />,
+                        ul: ({node, ...props}) => <ul className="list-disc pl-5 my-2 space-y-1" {...props} />,
+                        ol: ({node, ...props}) => <ol className="list-decimal pl-5 my-2 space-y-1" {...props} />,
+                        li: ({node, ...props}) => <li className="text-gray-700" {...props} />,
+                        strong: ({node, ...props}) => <strong className="font-bold text-gray-950" {...props} />,
+                      }}
+                    >
+                      {translation}
+                    </ReactMarkdown>
                   ) : (
                     <span className="text-gray-400 italic">No translation available. Check if a model is loaded.</span>
                   )}
