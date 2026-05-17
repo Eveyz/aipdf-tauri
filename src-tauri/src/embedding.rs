@@ -2,6 +2,8 @@ use ort::session::{Session, builder::GraphOptimizationLevel};
 use ort::inputs;
 use tokenizers::Tokenizer;
 use std::path::Path;
+use std::sync::Arc;
+use std::time::Instant;
 use ndarray::Array2;
 
 pub struct EmbeddingEngine {
@@ -13,32 +15,55 @@ impl EmbeddingEngine {
     /// Creates a new EmbeddingEngine by loading the ONNX model and the Tokenizer.
     pub fn new(model_path: &Path, tokenizer_path: &Path) -> Result<Self, String> {
         println!("[EmbeddingEngine] Explicitly initializing ORT...");
-        let _ = ort::init()
-            .with_name("aipdf-embeddings")
-            .commit();
+        let ort_builder = ort::init().with_name("aipdf-embeddings");
+        let _ = if std::env::var_os("AIPDF_ORT_VERBOSE").is_some() {
+            ort_builder
+                .with_logger(Arc::new(|level, category, id, code_location, message| {
+                    println!(
+                        "[ORT {level:?}] category={category} id={id} location={code_location} {message}"
+                    );
+                }))
+                .commit()
+        } else {
+            ort_builder.commit()
+        };
+
+        if !model_path.exists() {
+            return Err(format!("ONNX model not found at {}", model_path.display()));
+        }
+
+        if !tokenizer_path.exists() {
+            return Err(format!("Tokenizer not found at {}", tokenizer_path.display()));
+        }
 
         println!("[EmbeddingEngine] Loading tokenizer from {:?}", tokenizer_path);
         let tokenizer = Tokenizer::from_file(tokenizer_path)
             .map_err(|e| format!("Failed to load tokenizer: {}", e))?;
         println!("[EmbeddingEngine] Tokenizer loaded successfully.");
-        
-        println!("[EmbeddingEngine] Reading model bytes from {:?}", model_path);
-        let model_bytes = std::fs::read(model_path)
-            .map_err(|e| format!("Failed to read model file: {}", e))?;
-        println!("[EmbeddingEngine] Model bytes read: {} MB", model_bytes.len() / 1024 / 1024);
 
-        println!("[EmbeddingEngine] Creating ONNX session from memory...");
+        let model_size = std::fs::metadata(model_path)
+            .map_err(|e| format!("Failed to read model metadata: {}", e))?
+            .len();
+        println!("[EmbeddingEngine] Model size: {} MB", model_size / 1024 / 1024);
+
+        println!("[EmbeddingEngine] Creating ONNX session from file...");
+        let started = Instant::now();
         let session = Session::builder()
             .map_err(|e| format!("Failed to create session builder: {}", e))?
             .with_optimization_level(GraphOptimizationLevel::Level1)
             .map_err(|e| format!("Failed to set optimization level: {}", e))?
+            .with_memory_pattern(false)
+            .map_err(|e| format!("Failed to disable memory pattern optimization: {}", e))?
             .with_intra_threads(1)
             .map_err(|e| format!("Failed to set intra threads: {}", e))?
             .with_inter_threads(1)
             .map_err(|e| format!("Failed to set inter threads: {}", e))?
-            .commit_from_memory(&model_bytes)
-            .map_err(|e| format!("Failed to load ONNX model from memory: {}", e))?;
-        println!("[EmbeddingEngine] ONNX session created successfully.");
+            .commit_from_file(model_path)
+            .map_err(|e| format!("Failed to load ONNX model from file: {}", e))?;
+        println!(
+            "[EmbeddingEngine] ONNX session created successfully in {:.2?}.",
+            started.elapsed()
+        );
             
         Ok(Self { session, tokenizer })
     }
@@ -72,7 +97,6 @@ impl EmbeddingEngine {
         let token_type_ids_tensor = ort::value::Tensor::from_array(token_type_ids_array)
             .map_err(|e| format!("Failed to create tensor: {}", e))?;
 
-        // 4. Run ONNX session
         // 4. Run ONNX session
         let inputs_map = inputs! {
             "input_ids" => input_ids_tensor,
@@ -108,5 +132,29 @@ impl EmbeddingEngine {
         }
 
         Ok(cls_vector)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::EmbeddingEngine;
+
+    #[test]
+    #[ignore]
+    fn loads_embedding_model_from_env_path() {
+        let model_dir = std::path::PathBuf::from(
+            std::env::var("AIPDF_EMBEDDING_MODEL_DIR")
+                .expect("set AIPDF_EMBEDDING_MODEL_DIR to a downloaded embedding model directory"),
+        );
+        let model_path = model_dir.join("model.onnx");
+        let tokenizer_path = model_dir.join("tokenizer.json");
+
+        let mut engine = EmbeddingEngine::new(&model_path, &tokenizer_path)
+            .expect("embedding model should load");
+        let embedding = engine
+            .generate_embedding("test embedding")
+            .expect("embedding generation should run");
+
+        assert!(!embedding.is_empty());
     }
 }
