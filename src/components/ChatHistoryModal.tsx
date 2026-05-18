@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react"
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react"
 import * as DialogPrimitive from "@radix-ui/react-dialog"
 import { Search, History, Trash2, ArrowUpDown, CornerDownLeft } from "lucide-react"
 import { useStore, type ChatSession } from "../store"
@@ -19,32 +19,97 @@ function formatRelativeTime(timestamp: number) {
   return `${months} mos ago`
 }
 
+interface SessionItemProps {
+  session: ChatSession
+  index: number
+  isSelected: boolean
+  isCurrent: boolean
+  onSelect: (id: string) => void
+  onDelete: (id: string) => void
+  onMouseEnter: (index: number) => void
+}
+
+const SessionItem = React.memo(({ 
+  session, 
+  index, 
+  isSelected, 
+  isCurrent, 
+  onSelect, 
+  onDelete, 
+  onMouseEnter 
+}: SessionItemProps) => {
+  return (
+    <div
+      data-selected={isSelected}
+      onClick={() => onSelect(session.id)}
+      onMouseEnter={() => onMouseEnter(index)}
+      className={`group flex items-center justify-between px-2.5 py-1.5 rounded-md cursor-pointer transition-colors ${
+        isSelected ? (isCurrent ? 'bg-blue-100' : 'bg-gray-100') : (isCurrent ? 'bg-blue-50/50' : 'transparent')
+      }`}
+    >
+      <span className={`text-[12px] truncate ${isCurrent || isSelected ? 'text-gray-900 font-medium' : 'text-gray-700'}`}>
+        {session.name}
+      </span>
+      <div className="flex items-center gap-2 shrink-0">
+        <span className={`text-[10px] ${isCurrent || isSelected ? 'text-gray-500' : 'text-gray-400'}`}>
+          {formatRelativeTime(session.updatedAt)}
+        </span>
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            if (confirm("Delete this session?")) {
+              onDelete(session.id)
+            }
+          }}
+          className={`opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-black/5 transition-all ${
+            isCurrent || isSelected ? 'text-gray-500 hover:text-gray-900' : 'text-gray-400 hover:text-gray-700'
+          }`}
+          title="Delete session"
+        >
+          <Trash2 className="w-3 h-3" />
+        </button>
+      </div>
+    </div>
+  )
+})
+
+SessionItem.displayName = "SessionItem"
+
 export function ChatHistoryModal({ open, onOpenChange }: { open: boolean, onOpenChange: (open: boolean) => void }) {
-  const { sessions, activeSessionId, switchSession, deleteSession } = useStore()
+  // Use granular selectors to avoid re-rendering modal on every message update in active session
+  const sessions = useStore(state => state.sessions)
+  const activeSessionId = useStore(state => state.activeSessionId)
+  const switchSession = useStore(state => state.switchSession)
+  const deleteSession = useStore(state => state.deleteSession)
+
   const [search, setSearch] = useState("")
   const [selectedIndex, setSelectedIndex] = useState(0)
-
-  // Categorize sessions
-  const currentSession = sessions.find(s => s.id === activeSessionId)
-  
-  const allOtherSessions = sessions.filter(s => s.id !== activeSessionId)
-  
-  // Filter by search
-  const filteredOther = allOtherSessions.filter(s => s.name.toLowerCase().includes(search.toLowerCase()))
-  
-  // Time-based split for other sessions
-  const now = Date.now()
-  const recentThreshold = now - 7 * 24 * 60 * 60 * 1000 // 7 days
-  const recentSessions = filteredOther.filter(s => s.updatedAt >= recentThreshold)
-  const olderSessions = filteredOther.filter(s => s.updatedAt < recentThreshold)
-
-  // Flat list for keyboard navigation
-  const flatItems: Array<{ type: 'current' | 'recent' | 'older', session: ChatSession }> = []
-  if (!search && currentSession) flatItems.push({ type: 'current', session: currentSession })
-  recentSessions.forEach(s => flatItems.push({ type: 'recent', session: s }))
-  olderSessions.forEach(s => flatItems.push({ type: 'older', session: s }))
-
   const scrollRef = useRef<HTMLDivElement>(null)
+
+  // Memoize session categorization and filtering
+  const { currentSession, recentSessions, olderSessions, flatItems } = useMemo(() => {
+    const current = sessions.find(s => s.id === activeSessionId)
+    const other = sessions.filter(s => s.id !== activeSessionId)
+    const filtered = other.filter(s => s.name.toLowerCase().includes(search.toLowerCase()))
+    
+    const now = Date.now()
+    const recentThreshold = now - 7 * 24 * 60 * 60 * 1000 // 7 days
+    
+    const recent = filtered.filter(s => s.updatedAt >= recentThreshold)
+    const older = filtered.filter(s => s.updatedAt < recentThreshold)
+
+    const flat: Array<{ type: 'current' | 'recent' | 'older', session: ChatSession }> = []
+    if (!search && current) flat.push({ type: 'current', session: current })
+    recent.forEach(s => flat.push({ type: 'recent', session: s }))
+    older.forEach(s => flat.push({ type: 'older', session: s }))
+
+    return { 
+      currentSession: current, 
+      recentSessions: recent, 
+      olderSessions: older, 
+      flatItems: flat 
+    }
+  }, [sessions, activeSessionId, search])
 
   useEffect(() => {
     setSelectedIndex(0)
@@ -60,7 +125,20 @@ export function ChatHistoryModal({ open, onOpenChange }: { open: boolean, onOpen
     }
   }, [selectedIndex])
 
-  function handleKeyDown(e: React.KeyboardEvent) {
+  const handleSelect = useCallback((id: string) => {
+    switchSession(id)
+    onOpenChange(false)
+  }, [switchSession, onOpenChange])
+
+  const handleDelete = useCallback((id: string) => {
+    deleteSession(id)
+  }, [deleteSession])
+
+  const handleMouseEnter = useCallback((index: number) => {
+    setSelectedIndex(index)
+  }, [])
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "ArrowDown") {
       e.preventDefault()
       setSelectedIndex(prev => Math.min(prev + 1, flatItems.length - 1))
@@ -71,52 +149,9 @@ export function ChatHistoryModal({ open, onOpenChange }: { open: boolean, onOpen
       e.preventDefault()
       const item = flatItems[selectedIndex]
       if (item) {
-        switchSession(item.session.id)
-        onOpenChange(false)
+        handleSelect(item.session.id)
       }
     }
-  }
-
-  const renderSessionItem = (session: ChatSession, index: number, isCurrent: boolean) => {
-    const isSelected = selectedIndex === index
-
-    return (
-      <div
-        key={session.id}
-        data-selected={isSelected}
-        onClick={() => {
-          switchSession(session.id)
-          onOpenChange(false)
-        }}
-        onMouseEnter={() => setSelectedIndex(index)}
-        className={`group flex items-center justify-between px-2.5 py-1.5 rounded-md cursor-pointer transition-colors ${
-          isSelected ? (isCurrent ? 'bg-blue-100' : 'bg-gray-100') : (isCurrent ? 'bg-blue-50/50' : 'transparent')
-        }`}
-      >
-        <span className={`text-[12px] truncate ${isCurrent || isSelected ? 'text-gray-900 font-medium' : 'text-gray-700'}`}>
-          {session.name}
-        </span>
-        <div className="flex items-center gap-2 shrink-0">
-          <span className={`text-[10px] ${isCurrent || isSelected ? 'text-gray-500' : 'text-gray-400'}`}>
-            {formatRelativeTime(session.updatedAt)}
-          </span>
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              if (confirm("Delete this session?")) {
-                deleteSession(session.id)
-              }
-            }}
-            className={`opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-black/5 transition-all ${
-              isCurrent || isSelected ? 'text-gray-500 hover:text-gray-900' : 'text-gray-400 hover:text-gray-700'
-            }`}
-            title="Delete session"
-          >
-            <Trash2 className="w-3 h-3" />
-          </button>
-        </div>
-      </div>
-    )
   }
 
   let itemIndex = 0
@@ -143,21 +178,51 @@ export function ChatHistoryModal({ open, onOpenChange }: { open: boolean, onOpen
             {(!search && currentSession) && (
               <div className="mb-2">
                 <div className="px-2.5 py-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Current</div>
-                {renderSessionItem(currentSession, itemIndex++, true)}
+                <SessionItem 
+                  session={currentSession}
+                  index={itemIndex++}
+                  isSelected={selectedIndex === 0}
+                  isCurrent={true}
+                  onSelect={handleSelect}
+                  onDelete={handleDelete}
+                  onMouseEnter={handleMouseEnter}
+                />
               </div>
             )}
 
             {recentSessions.length > 0 && (
               <div className="mb-2">
                 <div className="px-2.5 py-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Recent in App</div>
-                {recentSessions.map(session => renderSessionItem(session, itemIndex++, false))}
+                {recentSessions.map(session => (
+                  <SessionItem 
+                    key={session.id}
+                    session={session}
+                    index={itemIndex++}
+                    isSelected={selectedIndex === itemIndex - 1}
+                    isCurrent={false}
+                    onSelect={handleSelect}
+                    onDelete={handleDelete}
+                    onMouseEnter={handleMouseEnter}
+                  />
+                ))}
               </div>
             )}
 
             {olderSessions.length > 0 && (
               <div className="mb-1">
                 <div className="px-2.5 py-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Other Conversations</div>
-                {olderSessions.map(session => renderSessionItem(session, itemIndex++, false))}
+                {olderSessions.map(session => (
+                  <SessionItem 
+                    key={session.id}
+                    session={session}
+                    index={itemIndex++}
+                    isSelected={selectedIndex === itemIndex - 1}
+                    isCurrent={false}
+                    onSelect={handleSelect}
+                    onDelete={handleDelete}
+                    onMouseEnter={handleMouseEnter}
+                  />
+                ))}
               </div>
             )}
             
