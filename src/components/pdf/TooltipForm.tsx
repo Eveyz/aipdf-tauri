@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { Plus, Edit2, Languages, AlertCircle } from "lucide-react"
-import { useAi } from "../../hooks/useAi"
+import { useStore } from "../../store"
 import { cn } from "../../lib/utils"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
@@ -29,7 +29,7 @@ export function TooltipForm({
   const [isTranslating, setIsTranslating] = useState(false)
   const [targetLang, setTargetLang] = useState("English")
   
-  const translateText = useAi().translateText
+  const translateText = useStore((state) => state.translateText)
   const loadedModel = useStore((state) => state.loadedModel)
 
   const handleTranslate = async (lang: string) => {

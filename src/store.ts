@@ -215,6 +215,17 @@ interface AppState {
   setShowSessions: (show: boolean) => void
   mindmapOpen: boolean
   setMindmapOpen: (open: boolean) => void
+  stopGeneration: () => Promise<void>
+  generate: (prompt: string, contexts?: ChatContext[], maxTokens?: number, temperature?: number) => Promise<void>
+  translateText: (text: string, targetLanguage: string) => Promise<string>
+  loadModel: (modelId: string) => Promise<ModelInfo>
+  unloadModel: () => Promise<void>
+  loadEmbeddingModel: (modelId: string) => Promise<void>
+  unloadEmbeddingModel: () => Promise<void>
+  listModels: () => Promise<ModelEntry[]>
+  downloadModel: (modelId: string, url: string) => Promise<void>
+  deleteModel: (modelId: string) => Promise<void>
+  testCloudModel: (baseUrl: string, apiKey: string, model: string) => Promise<{ ok: boolean; message: string }>
 }
 
 import { invoke } from "@tauri-apps/api/core"
@@ -742,4 +753,183 @@ switchWorkspace: async (id) => {
   },
   setShowSessions: (show) => set({ showSessions: show }),
   setMindmapOpen: (open) => set({ mindmapOpen: open }),
+
+  stopGeneration: async () => {
+    await invoke("stop_generation")
+    set({ isGenerating: false })
+  },
+
+  generate: async (prompt, contexts, maxTokens, temperature) => {
+    const { loadedModel, activeSessionId, chatMessages: currentMessages } = get()
+    if (!loadedModel) throw new Error("No model loaded")
+    if (!activeSessionId) throw new Error("No active session")
+
+    set({ isGenerating: true, streamingToken: "" })
+
+    if (loadedModel.source === "cloud") {
+      const messages = [
+        { id: "system", role: "system" as const, content: "" },
+        ...currentMessages.map(m => ({
+          id: m.id,
+          role: m.role,
+          content: m.content
+        }))
+      ]
+
+      await invoke("generate_cloud", {
+        sessionId: activeSessionId,
+        baseUrl: loadedModel.baseUrl,
+        apiKey: loadedModel.apiKey,
+        model: loadedModel.modelName,
+        messages,
+        contexts,
+        maxTokens,
+        temperature,
+        persist: true,
+      })
+    } else {
+      await invoke("generate", {
+        sessionId: activeSessionId,
+        prompt,
+        contexts,
+        maxTokens,
+        temperature,
+        persist: true,
+      })
+    }
+  },
+
+  translateText: async (text, targetLanguage) => {
+    const { loadedModel, activeWorkspaceId, sessions, activeSessionId } = get()
+    if (!loadedModel) throw new Error("No model loaded")
+
+    let sessionId = activeSessionId
+    if (!sessionId && activeWorkspaceId) {
+      if (sessions.length > 0) {
+        sessionId = sessions[0].id
+        set({ activeSessionId: sessionId })
+      } else {
+        sessionId = await get().createSession()
+      }
+    }
+
+    if (!sessionId) throw new Error("No active chat session available. Please open a workspace.")
+
+    let systemPrompt = `Role: You are an expert translator and built-in dictionary module, mimicking the precise, elegant, and minimalist UI style of Apple's "Lookup" and "Translate" system features.
+
+Task: Analyze the input. If it is a single word or short phrase, provide a lexicographical dictionary definition. If it is a full sentence or paragraph, provide a direct, natural translation into ${targetLanguage}. 
+
+Constraint: Do not include any conversational filler, introductory text, or markdown code blocks (\`\`\`). Output ONLY the raw formatted markdown text.
+
+---
+CRITERIA 1: If input is a SINGLE WORD / SHORT PHRASE (Dictionary Mode):
+Use this exact template:
+**[Word/Phrase]**
+*[Part of Speech]*
+
+• **[Translation into ${targetLanguage}]** [Core definition in ${targetLanguage}]
+  *English Definition:* [Concise English definition]
+  
+  **Synonyms:** [synonym 1], [synonym 2], [synonym 3]
+
+---
+CRITERIA 2: If input is a SENTENCE / PARAGRAPH (Translation Mode):
+Do NOT include labels like "Translation:", "Result:", or word breakdowns. Output ONLY the beautifully translated ${targetLanguage} text, ensuring it is contextually accurate, natural, and elegant (matching the style of professional literature). If the text contains multiple paragraphs, maintain the paragraph breaks.
+---`
+
+    const prompt = `Now, analyze, translate, and format the following input: "${text}"`
+
+    set({ isTranslating: true })
+
+    const { listen } = await import("@tauri-apps/api/event")
+
+    return new Promise(async (resolve, reject) => {
+      let result = ""
+      const unlisten = await listen<any>("ai-token", (event) => {
+        const { token, is_final } = event.payload
+
+        if (token) {
+          result += token
+        }
+
+        if (is_final) {
+          unlisten()
+          set({ isTranslating: false })
+          if (result.startsWith("Error:")) {
+            reject(new Error(result))
+          } else if (result.trim() === "") {
+            reject(new Error("Model returned an empty response. Try a different model or prompt."))
+          } else {
+            resolve(result)
+          }
+        }
+      })
+
+      try {
+        if (loadedModel.source === "cloud") {
+          await invoke("generate_cloud", {
+            sessionId,
+            baseUrl: loadedModel.baseUrl,
+            apiKey: loadedModel.apiKey,
+            model: loadedModel.modelName,
+            messages: [
+              { id: "system", role: "system", content: systemPrompt },
+              { id: "user", role: "user", content: prompt }
+            ],
+            maxTokens: 500,
+            temperature: 0.3,
+            persist: false,
+          })
+        } else {
+          await invoke("generate", {
+            sessionId,
+            prompt: `${systemPrompt}\n\nUser: ${prompt}`,
+            maxTokens: 500,
+            temperature: 0.3,
+            persist: false,
+          })
+        }
+      } catch (e) {
+        unlisten()
+        set({ isTranslating: false })
+        reject(e)
+      }
+    })
+  },
+
+  loadModel: async (modelId) => {
+    const info = await invoke<ModelInfo>("load_model", { modelId })
+    const model = { ...info, source: "local" } as ModelInfo
+    set({ loadedModel: model })
+    return model
+  },
+
+  unloadModel: async () => {
+    await invoke("unload_model")
+    set({ loadedModel: null })
+  },
+
+  loadEmbeddingModel: async (modelId) => {
+    await invoke("load_embedding_model", { modelId })
+  },
+
+  unloadEmbeddingModel: async () => {
+    await invoke("unload_embedding_model")
+  },
+
+  listModels: async () => {
+    return await invoke<ModelEntry[]>("list_models")
+  },
+
+  downloadModel: async (modelId, url) => {
+    await invoke("download_model", { modelId, url })
+  },
+
+  deleteModel: async (modelId) => {
+    await invoke("delete_model", { modelId })
+  },
+
+  testCloudModel: async (baseUrl, apiKey, model) => {
+    return await invoke<any>("test_cloud_model", { baseUrl, apiKey, model })
+  },
 }))

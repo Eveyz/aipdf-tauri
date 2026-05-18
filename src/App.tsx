@@ -9,8 +9,10 @@ import { ModelManager } from "./components/ModelManager"
 import { WelcomeScreen } from "./components/WelcomeScreen"
 import { PdfMindmapModal } from "./components/PdfMindmapModal"
 import { usePdf } from "./hooks/usePdf"
+import { useAiListeners } from "./hooks/useAiListeners"
 
 function App() {
+  useAiListeners()
   const { pdfInfo, activeWorkspaceId, workspaces, documents, sidebarOpen, chatOpen, init } = useStore()
   const { openPdf } = usePdf()
   const layoutKey = `${sidebarOpen ? "sidebar" : "no-sidebar"}-${chatOpen ? "chat" : "no-chat"}`

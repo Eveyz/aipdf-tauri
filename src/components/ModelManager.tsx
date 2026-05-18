@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react"
 import { Cloud, Download, Play, PlugZap, Trash2, Power, RefreshCw, MessageSquare, Brain, Target } from "lucide-react"
-import { useAi } from "../hooks/useAi"
 import { useStore, type CloudModelEntry, type ModelEntry } from "../store"
 import { Button } from "./ui/button"
 import { Input } from "./ui/input"
@@ -40,8 +39,15 @@ export function ModelManager() {
     setLoadedModel,
     setActiveEmbeddingModel,
     setDownloadProgress,
+    loadModel,
+    unloadModel,
+    loadEmbeddingModel,
+    unloadEmbeddingModel,
+    listModels,
+    downloadModel,
+    deleteModel,
+    testCloudModel,
   } = useStore()
-  const { listModels, loadModel, unloadModel, loadEmbeddingModel, unloadEmbeddingModel, downloadModel, deleteModel, testCloudModel } = useAi()
   
   const [activeCategory, setActiveCategory] = useState<ModelCategory>("chat")
   const [activeSource, setActiveSource] = useState<ModelSource>("local")

@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react"
 import { MessageSquare } from "lucide-react"
 import { ChatHistoryModal } from "./ChatHistoryModal"
-import { useAi } from "../hooks/useAi"
 import { useStore } from "../store"
 import { ScrollArea } from "./ui/scroll-area"
 import { ChatHeader } from "./chat/ChatHeader"
@@ -9,7 +8,7 @@ import { MessageList } from "./chat/MessageList"
 import { ChatInput } from "./chat/ChatInput"
 
 export function ChatPanel() {
-  const { generate } = useAi()
+  const generate = useStore(state => state.generate)
   
   // Specific selectors to avoid unnecessary re-renders
   const isGenerating = useStore(state => state.isGenerating)
