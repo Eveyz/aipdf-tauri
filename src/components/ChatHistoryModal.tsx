@@ -1,119 +1,25 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from "react"
+import { useEffect, useRef } from "react"
 import * as DialogPrimitive from "@radix-ui/react-dialog"
-import { Search, History, Trash2, ArrowUpDown, CornerDownLeft } from "lucide-react"
-import { useStore, type ChatSession } from "../store"
-
-function formatRelativeTime(timestamp: number) {
-  const diff = Date.now() - timestamp
-  const mins = Math.floor(diff / 60000)
-  const hours = Math.floor(mins / 60)
-  const days = Math.floor(hours / 24)
-  const months = Math.floor(days / 30)
-
-  if (mins < 1) return "Just now"
-  if (mins < 60) return `${mins} mins ago`
-  if (hours < 24) return `${hours} hrs ago`
-  if (days === 1) return `1 day ago`
-  if (days < 30) return `${days} days ago`
-  if (months === 1) return `1 mo ago`
-  return `${months} mos ago`
-}
-
-interface SessionItemProps {
-  session: ChatSession
-  index: number
-  isSelected: boolean
-  isCurrent: boolean
-  onSelect: (id: string) => void
-  onDelete: (id: string) => void
-  onMouseEnter: (index: number) => void
-}
-
-const SessionItem = React.memo(({ 
-  session, 
-  index, 
-  isSelected, 
-  isCurrent, 
-  onSelect, 
-  onDelete, 
-  onMouseEnter 
-}: SessionItemProps) => {
-  return (
-    <div
-      data-selected={isSelected}
-      onClick={() => onSelect(session.id)}
-      onMouseEnter={() => onMouseEnter(index)}
-      className={`group flex items-center justify-between px-2.5 py-1.5 rounded-md cursor-pointer transition-colors ${
-        isSelected ? (isCurrent ? 'bg-blue-100' : 'bg-gray-100') : (isCurrent ? 'bg-blue-50/50' : 'transparent')
-      }`}
-    >
-      <span className={`text-[12px] truncate ${isCurrent || isSelected ? 'text-gray-900 font-medium' : 'text-gray-700'}`}>
-        {session.name}
-      </span>
-      <div className="flex items-center gap-2 shrink-0">
-        <span className={`text-[10px] ${isCurrent || isSelected ? 'text-gray-500' : 'text-gray-400'}`}>
-          {formatRelativeTime(session.updatedAt)}
-        </span>
-        <button
-          onClick={(e) => {
-            e.stopPropagation()
-            if (confirm("Delete this session?")) {
-              onDelete(session.id)
-            }
-          }}
-          className={`opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-black/5 transition-all ${
-            isCurrent || isSelected ? 'text-gray-500 hover:text-gray-900' : 'text-gray-400 hover:text-gray-700'
-          }`}
-          title="Delete session"
-        >
-          <Trash2 className="w-3 h-3" />
-        </button>
-      </div>
-    </div>
-  )
-})
-
-SessionItem.displayName = "SessionItem"
+import { ArrowUpDown, CornerDownLeft } from "lucide-react"
+import { useChatHistory } from "../hooks/useChatHistory"
+import { SessionItem } from "./chat/SessionItem"
 
 export function ChatHistoryModal({ open, onOpenChange }: { open: boolean, onOpenChange: (open: boolean) => void }) {
-  // Use granular selectors to avoid re-rendering modal on every message update in active session
-  const sessions = useStore(state => state.sessions)
-  const activeSessionId = useStore(state => state.activeSessionId)
-  const switchSession = useStore(state => state.switchSession)
-  const deleteSession = useStore(state => state.deleteSession)
+  const {
+    search,
+    setSearch,
+    selectedIndex,
+    currentSession,
+    recentSessions,
+    olderSessions,
+    flatItems,
+    handleSelect,
+    handleDelete,
+    handleMouseEnter,
+    handleKeyDown
+  } = useChatHistory(open, onOpenChange)
 
-  const [search, setSearch] = useState("")
-  const [selectedIndex, setSelectedIndex] = useState(0)
   const scrollRef = useRef<HTMLDivElement>(null)
-
-  // Memoize session categorization and filtering
-  const { currentSession, recentSessions, olderSessions, flatItems } = useMemo(() => {
-    const current = sessions.find(s => s.id === activeSessionId)
-    const other = sessions.filter(s => s.id !== activeSessionId)
-    const filtered = other.filter(s => s.name.toLowerCase().includes(search.toLowerCase()))
-    
-    const now = Date.now()
-    const recentThreshold = now - 7 * 24 * 60 * 60 * 1000 // 7 days
-    
-    const recent = filtered.filter(s => s.updatedAt >= recentThreshold)
-    const older = filtered.filter(s => s.updatedAt < recentThreshold)
-
-    const flat: Array<{ type: 'current' | 'recent' | 'older', session: ChatSession }> = []
-    if (!search && current) flat.push({ type: 'current', session: current })
-    recent.forEach(s => flat.push({ type: 'recent', session: s }))
-    older.forEach(s => flat.push({ type: 'older', session: s }))
-
-    return { 
-      currentSession: current, 
-      recentSessions: recent, 
-      olderSessions: older, 
-      flatItems: flat 
-    }
-  }, [sessions, activeSessionId, search])
-
-  useEffect(() => {
-    setSelectedIndex(0)
-  }, [search, open])
 
   useEffect(() => {
     // Scroll selected item into view
@@ -124,35 +30,6 @@ export function ChatHistoryModal({ open, onOpenChange }: { open: boolean, onOpen
       }
     }
   }, [selectedIndex])
-
-  const handleSelect = useCallback((id: string) => {
-    switchSession(id)
-    onOpenChange(false)
-  }, [switchSession, onOpenChange])
-
-  const handleDelete = useCallback((id: string) => {
-    deleteSession(id)
-  }, [deleteSession])
-
-  const handleMouseEnter = useCallback((index: number) => {
-    setSelectedIndex(index)
-  }, [])
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "ArrowDown") {
-      e.preventDefault()
-      setSelectedIndex(prev => Math.min(prev + 1, flatItems.length - 1))
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault()
-      setSelectedIndex(prev => Math.max(prev - 1, 0))
-    } else if (e.key === "Enter") {
-      e.preventDefault()
-      const item = flatItems[selectedIndex]
-      if (item) {
-        handleSelect(item.session.id)
-      }
-    }
-  }
 
   let itemIndex = 0
 
