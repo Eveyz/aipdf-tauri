@@ -35,8 +35,8 @@ import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 
 function PageIndexer({ pdfDocument }: { pdfDocument: any }) {
-  const { currentPage, lastPdfPath } = useStore()
-  usePageIndexer(pdfDocument, currentPage, lastPdfPath)
+  const { currentPage, lastPdfHash } = useStore()
+  usePageIndexer(pdfDocument, currentPage, lastPdfHash)
   return null
 }
 

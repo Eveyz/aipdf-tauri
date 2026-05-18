@@ -33,6 +33,13 @@ export function usePdf() {
 
   async function openPdf(path: string) {
     const info = await invoke<PdfInfoResult>("open_pdf", { path })
+    const hashId = await invoke<string>("get_file_hash", { filePath: path })
+    await invoke("upsert_document_meta", {
+      hashId,
+      fileName: info.file_name,
+      filePath: path,
+    })
+
     setPdfInfo({
       fileName: info.file_name,
       pageCount: info.page_count,
@@ -40,8 +47,9 @@ export function usePdf() {
       pageHeight: info.page_height,
     })
     
-    const { setLastPdfPath, setWorkspaceLastDocPath, setCurrentPage } = useStore.getState()
+    const { setLastPdfPath, setLastPdfHash, setWorkspaceLastDocPath, setCurrentPage } = useStore.getState()
     setLastPdfPath(path)
+    setLastPdfHash(hashId)
     await setWorkspaceLastDocPath(path)
 
     const ws = useStore.getState().workspaces.find(w => w.id === useStore.getState().activeWorkspaceId)
@@ -71,6 +79,7 @@ export function usePdf() {
   async function closePdf() {
     await invoke("close_pdf")
     setPdfInfo(null)
+    useStore.getState().setLastPdfHash(null)
   }
 
   async function goToPage(page: number) {

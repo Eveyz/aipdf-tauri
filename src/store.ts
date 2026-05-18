@@ -163,6 +163,7 @@ interface AppState {
   downloadProgress: DownloadProgress | null
   cloudModels: CloudModelEntry[]
   lastPdfPath: string | null
+  lastPdfHash: string | null
 
   // Sessions
   sessions: ChatSession[]
@@ -180,6 +181,7 @@ interface AppState {
   addDocument: (path: string) => Promise<void>
   setPdfInfo: (info: PdfInfo | null) => void
   setLastPdfPath: (path: string | null) => void
+  setLastPdfHash: (hash: string | null) => void
   setCurrentPage: (page: number) => void
   setRenderedPage: (page: number, base64: string) => void
   setRenderedPageDim: (page: number, width: number, height: number) => void
@@ -248,6 +250,7 @@ export const useStore = create<AppState>((set, get) => ({
   downloadProgress: null,
   cloudModels: [],
   lastPdfPath: null,
+  lastPdfHash: null,
   mindmapOpen: false,
 
   // Sessions
@@ -407,7 +410,8 @@ switchWorkspace: async (id) => {
       })),
       activeSessionId: sessions[0]?.id || null,
       chatMessages: [], 
-      pdfInfo: null, 
+      pdfInfo: null,
+      lastPdfHash: null,
       highlights,
       pdfOutline: [],
     }))
@@ -487,6 +491,8 @@ switchWorkspace: async (id) => {
     if (!wsId) return
 
     const name = path.split("/").pop() || "Unknown"
+    const hashId = await invoke<string>("get_file_hash", { filePath: path })
+    await invoke("upsert_document_meta", { hashId, fileName: name, filePath: path })
     const doc = await invoke<any>("add_document", { workspaceId: wsId, path, name })
     const newDoc: Document = {
       id: doc.id,
@@ -505,6 +511,7 @@ switchWorkspace: async (id) => {
       invoke("set_setting", { key: "last_pdf_path", value: path }).catch(console.error)
     }
   },
+  setLastPdfHash: (hash) => set({ lastPdfHash: hash }),
   setCurrentPage: (page) => {
     set({ currentPage: page })
 

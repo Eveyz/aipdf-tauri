@@ -10,7 +10,7 @@ import { useStore } from '../store';
 export function usePageIndexer(
   pdfDocument: any | null,
   currentPageNumber: number,
-  documentId: string | null
+  hashId: string | null
 ) {
   const { activeEmbeddingModel } = useStore();
   // Keep track of pages processed in this viewing session to avoid redundant Tauri calls
@@ -18,17 +18,17 @@ export function usePageIndexer(
 
   // Reset processed pages when switching documents
   const lastDocId = useRef<string | null>(null);
-  if (documentId !== lastDocId.current) {
+  if (hashId !== lastDocId.current) {
     processedPages.current.clear();
-    lastDocId.current = documentId;
+    lastDocId.current = hashId;
   }
 
   useEffect(() => {
-    console.log(`[usePageIndexer] useEffect triggered for page ${currentPageNumber}, doc ${documentId}`);
+    console.log(`[usePageIndexer] useEffect triggered for page ${currentPageNumber}, hash ${hashId}`);
     
     // Only proceed if we have a valid document and page number
-    if (!pdfDocument || !documentId || typeof currentPageNumber !== 'number') {
-      console.log(`[usePageIndexer] Skipping: pdfDocument=${!!pdfDocument}, documentId=${documentId}, page=${currentPageNumber}`);
+    if (!pdfDocument || !hashId || typeof currentPageNumber !== 'number') {
+      console.log(`[usePageIndexer] Skipping: pdfDocument=${!!pdfDocument}, hashId=${hashId}, page=${currentPageNumber}`);
       return;
     }
 
@@ -53,7 +53,7 @@ export function usePageIndexer(
         
         // Check backend DB for actual persistence
         const isAlreadyIndexed = await invoke<boolean>('check_page_indexed', {
-          docId: documentId,
+          hashId,
           pageNum: pageToProcess,
         });
 
@@ -88,7 +88,7 @@ export function usePageIndexer(
 
         // 4. Send the text off to the Rust backend to be chunked, embedded, and stored
         await invoke('process_pdf_page', {
-          docId: documentId,
+          hashId,
           pageNum: pageToProcess,
           textContent: extractedText,
         });
@@ -106,5 +106,5 @@ export function usePageIndexer(
       console.log(`[usePageIndexer] Cleanup: clearing timer for page ${pageToProcess}`);
       clearTimeout(timerId);
     };
-  }, [pdfDocument, currentPageNumber, documentId]);
+  }, [pdfDocument, currentPageNumber, hashId]);
 }

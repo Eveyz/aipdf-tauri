@@ -1,9 +1,9 @@
+use chrono::Utc;
 use rusqlite::{params, Connection, Result};
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Mutex;
 use uuid::Uuid;
-use chrono::Utc;
-use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct DbWorkspace {
@@ -79,7 +79,8 @@ impl DbManager {
 
         // Migration: Check if models table exists
         let models_exists = {
-            let mut stmt = conn.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='models'")?;
+            let mut stmt = conn
+                .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='models'")?;
             let mut rows = stmt.query([])?;
             rows.next()?.is_some()
         };
@@ -158,14 +159,48 @@ impl DbManager {
             [],
         )?;
 
+        let document_columns = {
+            let mut stmt = conn.prepare("PRAGMA table_info(documents)")?;
+            let mut rows = stmt.query([])?;
+            let mut columns = Vec::new();
+            while let Some(row) = rows.next()? {
+                columns.push(row.get::<_, String>(1)?);
+            }
+            columns
+        };
+
+        let has_legacy_documents_table = document_columns.iter().any(|c| c == "workspace_id")
+            && document_columns.iter().any(|c| c == "path")
+            && document_columns.iter().any(|c| c == "name");
+
         conn.execute(
-            "CREATE TABLE IF NOT EXISTS documents (
+            "CREATE TABLE IF NOT EXISTS workspace_documents (
                 id TEXT PRIMARY KEY,
                 workspace_id TEXT NOT NULL,
                 path TEXT NOT NULL,
                 name TEXT NOT NULL,
                 created_at INTEGER NOT NULL,
                 FOREIGN KEY(workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
+            )",
+            [],
+        )?;
+
+        if has_legacy_documents_table {
+            println!("[DB] Migrating legacy documents table to workspace_documents");
+            conn.execute(
+                "INSERT OR IGNORE INTO workspace_documents (id, workspace_id, path, name, created_at)
+                 SELECT id, workspace_id, path, name, created_at FROM documents",
+                [],
+            )?;
+            conn.execute("DROP TABLE documents", [])?;
+        }
+
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS documents (
+                hash_id TEXT PRIMARY KEY,
+                file_name TEXT NOT NULL,
+                file_path TEXT NOT NULL,
+                added_at INTEGER NOT NULL
             )",
             [],
         )?;
@@ -219,7 +254,13 @@ impl DbManager {
     }
 
     // Model methods
-    pub fn add_or_update_model(&self, id: &str, name: &str, source: &str, config: &str) -> Result<()> {
+    pub fn add_or_update_model(
+        &self,
+        id: &str,
+        name: &str,
+        source: &str,
+        config: &str,
+    ) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "INSERT INTO models (id, name, source, config) VALUES (?1, ?2, ?3, ?4)
@@ -238,7 +279,9 @@ impl DbManager {
 
     pub fn get_last_used_model(&self) -> Result<Option<DbModel>> {
         let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare("SELECT id, name, source, config, last_used FROM models WHERE last_used = 1 LIMIT 1")?;
+        let mut stmt = conn.prepare(
+            "SELECT id, name, source, config, last_used FROM models WHERE last_used = 1 LIMIT 1",
+        )?;
         let mut rows = stmt.query_map([], |row| {
             Ok(DbModel {
                 id: row.get(0)?,
@@ -265,7 +308,7 @@ impl DbManager {
         query.push_str(" ORDER BY name ASC");
 
         let mut stmt = conn.prepare(&query)?;
-        
+
         let row_mapper = |row: &rusqlite::Row| {
             Ok(DbModel {
                 id: row.get(0)?,
@@ -300,7 +343,7 @@ impl DbManager {
         let conn = self.conn.lock().unwrap();
         let id = Uuid::new_v4().to_string();
         let now = Utc::now().timestamp_millis();
-        
+
         conn.execute(
             "INSERT INTO workspaces (id, name, metadata, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)",
             params![id, name, metadata, now, now],
@@ -322,7 +365,7 @@ impl DbManager {
         } else {
             "SELECT id, name, metadata, created_at, updated_at FROM workspaces ORDER BY updated_at DESC".to_string()
         };
-        
+
         let mut stmt = conn.prepare(&query)?;
         let rows = stmt.query_map([], |row| {
             Ok(DbWorkspace {
@@ -367,19 +410,24 @@ impl DbManager {
         Ok(())
     }
 
-    pub fn find_workspace_by_doc_path(&self, path: &str, workspace_type: Option<&str>) -> Result<Option<DbWorkspace>> {
+    pub fn find_workspace_by_doc_path(
+        &self,
+        path: &str,
+        workspace_type: Option<&str>,
+    ) -> Result<Option<DbWorkspace>> {
         let conn = self.conn.lock().unwrap();
         let mut query = "SELECT w.id, w.name, w.metadata, w.created_at, w.updated_at 
                          FROM workspaces w
-                         JOIN documents d ON w.id = d.workspace_id
-                         WHERE d.path = ?1".to_string();
-        
+                         JOIN workspace_documents d ON w.id = d.workspace_id
+                         WHERE d.path = ?1"
+            .to_string();
+
         if let Some(t) = workspace_type {
             // metadata column stores JSON like {"type": "quick_read", ...}
             // We use SQL LIKE for a simple check since we know the format
             query.push_str(&format!(" AND w.metadata LIKE '%\"type\":\"{}\"%'", t));
         }
-        
+
         query.push_str(" LIMIT 1");
 
         let mut stmt = conn.prepare(&query)?;
@@ -407,7 +455,7 @@ impl DbManager {
         let now = Utc::now().timestamp_millis();
 
         conn.execute(
-            "INSERT INTO documents (id, workspace_id, path, name, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+            "INSERT INTO workspace_documents (id, workspace_id, path, name, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
             params![id, workspace_id, path, name, now],
         )?;
 
@@ -422,7 +470,7 @@ impl DbManager {
 
     pub fn get_documents(&self, workspace_id: &str) -> Result<Vec<DbDocument>> {
         let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare("SELECT id, workspace_id, path, name, created_at FROM documents WHERE workspace_id = ?1")?;
+        let mut stmt = conn.prepare("SELECT id, workspace_id, path, name, created_at FROM workspace_documents WHERE workspace_id = ?1")?;
         let rows = stmt.query_map(params![workspace_id], |row| {
             Ok(DbDocument {
                 id: row.get(0)?,
@@ -440,8 +488,42 @@ impl DbManager {
         Ok(docs)
     }
 
+    pub fn upsert_document_meta(
+        &self,
+        hash_id: &str,
+        file_name: &str,
+        file_path: &str,
+    ) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let now = Utc::now().timestamp_millis();
+
+        conn.execute(
+            "INSERT INTO documents (hash_id, file_name, file_path, added_at)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(hash_id) DO UPDATE SET file_path = excluded.file_path",
+            params![hash_id, file_name, file_path, now],
+        )?;
+
+        Ok(())
+    }
+
+    pub fn get_document_path(&self, hash_id: &str) -> Result<String> {
+        let conn = self.conn.lock().unwrap();
+        conn.query_row(
+            "SELECT file_path FROM documents WHERE hash_id = ?1",
+            params![hash_id],
+            |row| row.get(0),
+        )
+    }
+
     // Highlight methods
-    pub fn add_highlight(&self, id: &str, workspace_id: &str, document_path: &str, highlight_data: &str) -> Result<DbHighlight> {
+    pub fn add_highlight(
+        &self,
+        id: &str,
+        workspace_id: &str,
+        document_path: &str,
+        highlight_data: &str,
+    ) -> Result<DbHighlight> {
         let conn = self.conn.lock().unwrap();
         let now = Utc::now().timestamp_millis();
 
@@ -490,7 +572,7 @@ impl DbManager {
         let conn = self.conn.lock().unwrap();
         let id = Uuid::new_v4().to_string();
         let now = Utc::now().timestamp_millis();
-        
+
         conn.execute(
             "INSERT INTO sessions (id, workspace_id, name, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)",
             params![id, workspace_id, name, now, now],
@@ -541,7 +623,13 @@ impl DbManager {
         Ok(())
     }
 
-    pub fn add_message(&self, session_id: &str, role: &str, content: &str, contexts: Option<&str>) -> Result<DbMessage> {
+    pub fn add_message(
+        &self,
+        session_id: &str,
+        role: &str,
+        content: &str,
+        contexts: Option<&str>,
+    ) -> Result<DbMessage> {
         let conn = self.conn.lock().unwrap();
         let id = Uuid::new_v4().to_string();
         let now = Utc::now().timestamp_millis();

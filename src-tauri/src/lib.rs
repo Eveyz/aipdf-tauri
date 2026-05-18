@@ -1,12 +1,12 @@
-mod commands;
-mod pdf;
 mod ai;
-mod models;
-mod state;
+mod commands;
 mod db;
-mod vector_db;
 mod embedding;
+mod models;
+mod pdf;
 mod rag_pipeline;
+mod state;
+mod vector_db;
 
 use state::AppState;
 use std::sync::Mutex;
@@ -16,7 +16,7 @@ pub fn run() {
     let app_dir = dirs::home_dir()
         .unwrap_or_else(|| std::env::current_dir().unwrap())
         .join(".aipdf");
-    
+
     if !app_dir.exists() {
         std::fs::create_dir_all(&app_dir).expect("Failed to create app directory");
     }
@@ -25,12 +25,18 @@ pub fn run() {
     let db = db::DbManager::new(db_path).expect("Failed to initialize database");
 
     let vector_db = tauri::async_runtime::block_on(async {
-        let conn = vector_db::init_db().await.expect("Failed to initialize vector database");
-        vector_db::init_document_table(&conn, 384).await.expect("Failed to initialize vector database table");
+        let conn = vector_db::init_db()
+            .await
+            .expect("Failed to initialize vector database");
+        vector_db::init_document_table(&conn, 384)
+            .await
+            .expect("Failed to initialize vector database table");
         conn
     });
 
-    let last_embedding_model_id = db.get_setting("last_used_embedding_model_id").unwrap_or(None);
+    let last_embedding_model_id = db
+        .get_setting("last_used_embedding_model_id")
+        .unwrap_or(None);
     let mut embedding_engine = None;
     if let Some(model_id) = last_embedding_model_id {
         if let Ok(entry) = models::registry::get_model_info(&model_id) {
@@ -102,6 +108,8 @@ pub fn run() {
             commands::workspace::find_workspace_by_path,
             commands::workspace::add_document,
             commands::workspace::get_documents,
+            commands::workspace::upsert_document_meta,
+            commands::workspace::get_document_path,
             commands::workspace::add_highlight,
             commands::workspace::get_highlights,
             commands::workspace::delete_highlight,
