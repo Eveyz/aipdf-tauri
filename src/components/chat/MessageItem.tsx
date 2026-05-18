@@ -1,7 +1,7 @@
 import React, { useState } from "react"
 import {
-  MessageSquare,
-  Plus,
+  FileText,
+  File,
   RotateCcw,
   X,
   Loader2,
@@ -56,7 +56,11 @@ MarkdownRenderer.displayName = "MarkdownRenderer"
 
 // Context pill for context display (file, page, text)
 export function ContextPill({ ctx, onRemove }: { ctx: ChatContext, onRemove?: (id: string) => void }) {
-  const icon = ctx.type === "file" ? <MessageSquare className="w-3 h-3 text-blue-500" /> : ctx.type === "page" ? <Plus className="w-3 h-3 text-orange-500" /> : <RotateCcw className="w-3 h-3 text-green-500" />
+  const icon = ctx.type === "file" 
+    ? <FileText className="w-3 h-3 text-blue-500" /> 
+    : ctx.type === "page" 
+      ? <File className="w-3 h-3 text-orange-500" /> 
+      : <RotateCcw className="w-3 h-3 text-green-500" />
 
   return (
     <div className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 border border-gray-200 rounded-md shadow-[0_1px_2px_rgba(0,0,0,0.02)] text-[11px] text-gray-600 font-medium max-w-[180px] animate-in fade-in zoom-in duration-200">

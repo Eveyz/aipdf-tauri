@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect, useCallback } from "react"
-import { Send, Square, Trash2, Plus } from "lucide-react"
+import React, { useState, useRef, useEffect, useCallback, useMemo } from "react"
+import { Send, Square, Plus, FileText, File } from "lucide-react"
 import { cn } from "../../lib/utils"
 import { useStore } from "../../store"
 import {
@@ -17,34 +17,43 @@ interface ChatInputProps {
   onAddFullDocument: () => void
 }
 
-export function ChatInput({
+export const ChatInput = React.memo(({
   onSend,
   onAddCurrentPage,
   onAddFullDocument
-}: ChatInputProps) {
+}: ChatInputProps) => {
   const [input, setInput] = useState("")
   const [showContextMenu, setShowContextMenu] = useState(false)
   const [menuSelectedIndex, setMenuSelectedIndex] = useState(0)
   const contextMenuRef = useRef<HTMLDivElement>(null)
   
-  const {
-    isGenerating,
-    loadedModel,
-    cloudModels,
-    setLoadedModel,
-    chatContexts,
-    removeChatContext,
-    clearChat,
-    stopGeneration,
-    currentPage,
-    chatMessages
-  } = useStore()
+  // Use granular selectors to avoid re-rendering on every store change (e.g. streaming tokens)
+  const isGenerating = useStore(state => state.isGenerating)
+  const loadedModel = useStore(state => state.loadedModel)
+  const cloudModels = useStore(state => state.cloudModels)
+  const setLoadedModel = useStore(state => state.setLoadedModel)
+  const chatContexts = useStore(state => state.chatContexts)
+  const removeChatContext = useStore(state => state.removeChatContext)
+  const stopGeneration = useStore(state => state.stopGeneration)
+  const currentPage = useStore(state => state.currentPage)
 
-  // Menu items configuration
-  const menuItems = [
-    { id: 'page', label: 'Current Page', shortcut: `p.${currentPage + 1}`, action: onAddCurrentPage },
-    { id: 'doc', label: 'Full Document', shortcut: 'PDF', action: onAddFullDocument },
-  ]
+  // Memoize menu items configuration
+  const menuItems = useMemo(() => [
+    { 
+      id: 'page', 
+      label: 'Current Page', 
+      shortcut: `p.${currentPage + 1}`, 
+      icon: <File className="w-3.5 h-3.5" />,
+      action: onAddCurrentPage 
+    },
+    { 
+      id: 'doc', 
+      label: 'Full Document', 
+      shortcut: 'PDF', 
+      icon: <FileText className="w-3.5 h-3.5" />,
+      action: onAddFullDocument 
+    },
+  ], [currentPage, onAddCurrentPage, onAddFullDocument])
 
   // Close context menu when clicking outside
   useEffect(() => {
@@ -78,9 +87,9 @@ export function ChatInput({
       setShowContextMenu(false)
       setInput(prev => prev.replace(/@$/, ""))
     }
-  }, [menuItems, onAddCurrentPage, onAddFullDocument])
+  }, [menuItems])
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (showContextMenu) {
       if (e.key === "ArrowDown") {
         e.preventDefault()
@@ -108,9 +117,9 @@ export function ChatInput({
       e.preventDefault()
       handleSend()
     }
-  }
+  }, [showContextMenu, menuItems.length, handleSelectMenuItem, menuSelectedIndex, handleSend])
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+  const handleInputChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newValue = e.target.value
     setInput(newValue)
     
@@ -121,9 +130,9 @@ export function ChatInput({
     } else if (showContextMenu && !newValue.includes("@")) {
       setShowContextMenu(false)
     }
-  }
+  }, [showContextMenu])
 
-  const handleModelSelect = (value: string) => {
+  const handleModelSelect = useCallback((value: string) => {
     const model = cloudModels.find((entry) => `cloud:${entry.id}` === value)
     if (!model) return
 
@@ -138,7 +147,7 @@ export function ChatInput({
       apiKey: model.apiKey,
       modelName: model.modelName,
     })
-  }
+  }, [cloudModels, setLoadedModel])
 
   return (
     <div className="shrink-0 w-full p-4 pt-0">
@@ -159,7 +168,7 @@ export function ChatInput({
                   menuSelectedIndex === idx ? "bg-blue-50 text-blue-600" : "text-gray-700 hover:bg-gray-50"
                 )}
               >
-                <Plus className="w-3.5 h-3.5" />
+                {item.icon}
                 <span className="flex-1 text-left font-medium">{item.label}</span>
                 <span className={cn(
                   "text-[10px] font-mono",
@@ -229,16 +238,6 @@ export function ChatInput({
             </div>
 
             <div className="flex items-center gap-1.5 shrink-0 ml-2">
-              {chatMessages.length > 0 && (
-                <button
-                  className="h-7 w-7 flex items-center justify-center rounded-md text-gray-400 hover:text-red-500 hover:bg-white hover:shadow-sm transition-all shrink-0"
-                  onClick={clearChat}
-                  title="Clear chat"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
-              )}
-
               {isGenerating ? (
                 <button
                   className="h-7 w-7 flex items-center justify-center rounded-md bg-red-50 text-red-500 shadow-sm hover:bg-red-100 transition-all shrink-0"
@@ -269,4 +268,6 @@ export function ChatInput({
       </div>
     </div>
   )
-}
+})
+
+ChatInput.displayName = "ChatInput"

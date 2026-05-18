@@ -17,14 +17,12 @@ interface CloudTestResult {
 let listenersStarted = false
 
 export function useAi() {
-  const {
-    loadedModel,
-    isGenerating,
-    setLoadedModel,
-    setIsGenerating,
-    setStreamingToken,
-    chatMessages,
-  } = useStore()
+  const loadedModel = useStore((state) => state.loadedModel)
+  const isGenerating = useStore((state) => state.isGenerating)
+  const setLoadedModel = useStore((state) => state.setLoadedModel)
+  const setIsGenerating = useStore((state) => state.setIsGenerating)
+  const setStreamingToken = useStore((state) => state.setStreamingToken)
+  const chatMessages = useStore((state) => state.chatMessages)
 
   useEffect(() => {
     if (listenersStarted) return
