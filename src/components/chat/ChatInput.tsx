@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react"
+import React, { useState, useRef, useEffect, useCallback } from "react"
 import { Send, Square, Trash2, Plus } from "lucide-react"
 import { cn } from "../../lib/utils"
 import { useStore } from "../../store"
@@ -24,6 +24,7 @@ export function ChatInput({
 }: ChatInputProps) {
   const [input, setInput] = useState("")
   const [showContextMenu, setShowContextMenu] = useState(false)
+  const [menuSelectedIndex, setMenuSelectedIndex] = useState(0)
   const contextMenuRef = useRef<HTMLDivElement>(null)
   
   const {
@@ -39,6 +40,12 @@ export function ChatInput({
     chatMessages
   } = useStore()
 
+  // Menu items configuration
+  const menuItems = [
+    { id: 'page', label: 'Current Page', shortcut: `p.${currentPage + 1}`, action: onAddCurrentPage },
+    { id: 'doc', label: 'Full Document', shortcut: 'PDF', action: onAddFullDocument },
+  ]
+
   // Close context menu when clicking outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -50,20 +57,69 @@ export function ChatInput({
     return () => document.removeEventListener("mousedown", handleClickOutside)
   }, [])
 
-  const handleSend = () => {
+  // Auto-hide menu if @ is deleted
+  useEffect(() => {
+    if (showContextMenu && !input.includes("@")) {
+      setShowContextMenu(false)
+    }
+  }, [input, showContextMenu])
+
+  const handleSend = useCallback(() => {
     const trimmedInput = input.trim()
     if (!trimmedInput || isGenerating || !loadedModel) return
     onSend(trimmedInput)
     setInput("")
-  }
+  }, [input, isGenerating, loadedModel, onSend])
+
+  const handleSelectMenuItem = useCallback((index: number) => {
+    const item = menuItems[index]
+    if (item) {
+      item.action()
+      setShowContextMenu(false)
+      setInput(prev => prev.replace(/@$/, ""))
+    }
+  }, [menuItems, onAddCurrentPage, onAddFullDocument])
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (showContextMenu) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault()
+        setMenuSelectedIndex(prev => (prev + 1) % menuItems.length)
+        return
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault()
+        setMenuSelectedIndex(prev => (prev - 1 + menuItems.length) % menuItems.length)
+        return
+      }
+      if (e.key === "Enter") {
+        e.preventDefault()
+        handleSelectMenuItem(menuSelectedIndex)
+        return
+      }
+      if (e.key === "Escape") {
+        e.preventDefault()
+        setShowContextMenu(false)
+        return
+      }
+    }
+
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault()
       handleSend()
     }
-    if (e.key === "@") {
+  }
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const newValue = e.target.value
+    setInput(newValue)
+    
+    // Simple logic to show menu if last char is @
+    if (newValue.endsWith("@")) {
       setShowContextMenu(true)
+      setMenuSelectedIndex(0) // Default to first item
+    } else if (showContextMenu && !newValue.includes("@")) {
+      setShowContextMenu(false)
     }
   }
 
@@ -93,30 +149,24 @@ export function ChatInput({
             className="absolute bottom-full left-0 mb-1.5 w-56 bg-white border border-gray-200 rounded-lg shadow-xl py-1.5 z-[100] animate-in fade-in slide-in-from-bottom-2 duration-200"
           >
             <div className="px-3 py-1 text-[10px] font-bold text-gray-400 uppercase tracking-tight">Attach Context</div>
-            <button 
-              onClick={() => {
-                onAddCurrentPage()
-                setShowContextMenu(false)
-                setInput(prev => prev.replace(/@$/, ""))
-              }}
-              className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-gray-700 hover:bg-blue-50 hover:text-blue-600 transition-colors"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span className="flex-1 text-left font-medium">Current Page</span>
-              <span className="text-[10px] text-gray-400 font-mono">p.{currentPage + 1}</span>
-            </button>
-            <button 
-              onClick={() => {
-                onAddFullDocument()
-                setShowContextMenu(false)
-                setInput(prev => prev.replace(/@$/, ""))
-              }}
-              className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-gray-700 hover:bg-blue-50 hover:text-blue-600 transition-colors"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span className="flex-1 text-left font-medium">Full Document</span>
-              <span className="text-[10px] text-gray-400 font-mono">PDF</span>
-            </button>
+            {menuItems.map((item, idx) => (
+              <button 
+                key={item.id}
+                onClick={() => handleSelectMenuItem(idx)}
+                onMouseEnter={() => setMenuSelectedIndex(idx)}
+                className={cn(
+                  "w-full flex items-center gap-2.5 px-3 py-2 text-[13px] transition-colors",
+                  menuSelectedIndex === idx ? "bg-blue-50 text-blue-600" : "text-gray-700 hover:bg-gray-50"
+                )}
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span className="flex-1 text-left font-medium">{item.label}</span>
+                <span className={cn(
+                  "text-[10px] font-mono",
+                  menuSelectedIndex === idx ? "text-blue-400" : "text-gray-400"
+                )}>{item.shortcut}</span>
+              </button>
+            ))}
             <div className="h-px bg-gray-100 my-1" />
             <div className="px-3 py-1 text-[10px] font-medium text-gray-300 italic">More sources coming soon...</div>
           </div>
@@ -134,7 +184,7 @@ export function ChatInput({
           <textarea
             className="min-h-[100px] w-full resize-none bg-transparent px-3.5 py-3 text-[13px] font-normal outline-none placeholder:text-gray-400 leading-relaxed"
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={handleInputChange}
             onKeyDown={handleKeyDown}
             placeholder={loadedModel ? "Ask a question or type @ to add context..." : "Load a model first..."}
             disabled={!loadedModel}
