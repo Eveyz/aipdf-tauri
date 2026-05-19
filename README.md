@@ -1,149 +1,98 @@
-# AiPDF
+# AiPDF: The Private, Performance-First AI PDF Workspace
 
-A desktop PDF viewer with built-in AI chat, powered by Tauri 2, React, and Rust. Open PDFs, navigate pages, extract text, and ask questions about your documents using local ONNX models or cloud-based OpenAI-compatible APIs.
+AiPDF is a blazingly fast, privacy-focused desktop application that transforms how you interact with your documents. Built with **Rust**, **Tauri 2**, and **React**, it combines native performance with state-of-the-art local AI to give you a powerful research assistant that never leaks your data.
 
-## Features
+## 🚀 Why AiPDF?
 
-- **PDF Viewing** — Open, render, and navigate multi-page PDFs with zoom controls
-- **Text Extraction** — Extract per-page text with character-level position data
-- **AI Chat** — Ask questions about your PDF in a side panel with markdown-rendered responses
-- **PDF Context** — Select text from the PDF to use as context in AI prompts
-- **Local Models** — Load ONNX models from `~/.aipdf/models/` with tokenizer support
-- **Cloud Models** — Connect to any OpenAI-compatible API (OpenAI, Groq, Together, etc.)
-- **Model Manager** — Download, delete, load/unload local models; add, test, and switch cloud models
-- **Resizable Layout** — Three-panel layout (sidebar, viewer, chat) with draggable separators
-- **Cross-Platform** — macOS (universal), Windows (x64), Linux (x64)
+- **⚡ Blazingly Fast Performance:** Leveraging Rust's memory safety and speed, AiPDF handles massive documents with ease. Native PDF rendering via `pdfium-render` ensures smooth navigation and instant text extraction.
+- **🛡️ Privacy First (Offline-First):** Your data stays on your machine. All AI inference is performed locally using **ONNX Runtime**, meaning your sensitive documents never touch the cloud. No API keys required, no subscription needed.
+- **🧠 Local Intelligence:** Powered by high-performance local models. Chat with your PDFs, summarize complex sections, and extract insights without compromising security.
+- **📂 Intelligent Workspace Management:** Organize your research into logical workspaces. Move beyond single-file viewing to managing entire projects with ease.
+- **🔍 Advanced RAG Pipeline:** Built-in Retrieval-Augmented Generation (RAG) using **LanceDB** (the ultra-fast vector database built on Apache Arrow) for pin-point accurate context retrieval during AI chats.
 
-## Tech Stack
+---
+
+## ✨ Key Features
+
+- **Interactive AI Chat:** Converse with your documents in real-time. Ask questions, get summaries, and dive deeper into technical details.
+- **Visual Mindmaps:** (Experimental) Visualize document structures and relationships using interactive flow charts powered by **React Flow**.
+- **High-Fidelity PDF Viewer:** Smooth scrolling, character-level text selection, and intelligent page indexing.
+- **Model Manager:** Easily download, load, and manage local ONNX models. Support for cloud-based OpenAI-compatible APIs is also available for those who prefer it.
+- **Semantic Search:** Find exactly what you need with vector-based search that understands the *meaning* of your query, not just keywords.
+- **Multi-Document Workspaces:** Open multiple PDFs in a single project and chat across all of them (coming soon/in-progress).
+
+---
+
+## 🛠️ Tech Stack
 
 | Layer | Technology |
 |-------|-----------|
-| Desktop runtime | [Tauri 2](https://v2.tauri.app/) |
-| Frontend | React 19, TypeScript, Vite 7 |
-| Styling | Tailwind CSS 4, Radix UI, Lucide icons |
-| State management | Zustand |
-| PDF rendering | [pdfium-render](https://github.com/ajrcarey/pdfium-render) (bundled Pdfium) |
-| Local AI inference | [ort](https://github.com/pykeio/ort) (ONNX Runtime) |
-| Tokenization | [tokenizers](https://github.com/huggingface/tokenizers) |
-| Cloud AI | reqwest (OpenAI-compatible chat completions) |
+| **Core Engine** | [Rust](https://www.rust-lang.org/) (High-performance backend) |
+| **Desktop Runtime** | [Tauri 2](https://v2.tauri.app/) (Lightweight native app shell) |
+| **Frontend** | [React 19](https://react.dev/), [TypeScript](https://www.typescriptlang.org/), [Vite 7](https://vitejs.dev/) |
+| **Styling** | [Tailwind CSS 4](https://tailwindcss.com/), [Shadcn UI](https://ui.shadcn.com/) |
+| **Vector DB** | [LanceDB](https://lancedb.com/) (Local vector storage via Arrow) |
+| **AI Inference** | [ort](https://github.com/pykeio/ort) (ONNX Runtime) & [tokenizers](https://github.com/huggingface/tokenizers) |
+| **PDF Engine** | [pdfium-render](https://github.com/ajrcarey/pdfium-render) (Bundled Google Pdfium) |
 
-## Prerequisites
+---
 
-- [Rust](https://rustup.rs/) (latest stable)
-- [Node.js](https://nodejs.org/) (v18+) and a package manager (npm, pnpm, or bun)
-- Platform-specific Tauri dependencies — see [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/)
+## 🚦 Getting Started
 
-## Getting Started
+### Prerequisites
 
-```sh
-# Install frontend dependencies
-npm install
+- **Rust:** [Install Rust](https://rustup.rs/) (latest stable)
+- **Node.js:** v18+ with `npm`, `pnpm`, or `bun`
+- **System Dependencies:** See [Tauri Prerequisites](https://v2.tauri.app/start/prerequisites/)
 
-# Download bundled Pdfium binaries
-bash scripts/fetch-pdfium.sh
+### Installation & Development
 
-# Run in development mode
-npm run tauri dev
+1. **Clone the repository:**
+   ```sh
+   git clone https://github.com/your-repo/aipdf-tauri.git
+   cd aipdf-tauri
+   ```
 
-# Build for production
-npm run tauri build
-```
+2. **Install frontend dependencies:**
+   ```sh
+   npm install
+   ```
 
-## Project Structure
+3. **Fetch Pdfium binaries:**
+   ```sh
+   bash scripts/fetch-pdfium.sh
+   ```
 
-```
-aipdf-tauri/
-├── src/                        # Frontend (React + TypeScript)
-│   ├── components/
-│   │   ├── ChatPanel.tsx       # AI chat interface
-│   │   ├── ModelManager.tsx    # Local & cloud model management dialog
-│   │   ├── PageSidebar.tsx     # Page thumbnail navigation
-│   │   ├── PdfViewer.tsx       # PDF page renderer
-│   │   ├── Toolbar.tsx         # Top toolbar (open, navigate, zoom, toggles)
-│   │   ├── WelcomeScreen.tsx   # Landing screen when no PDF is open
-│   │   └── ui/                 # Reusable UI primitives (Radix-based)
-│   ├── hooks/
-│   │   ├── useAi.ts            # AI invoke wrappers & event listeners
-│   │   └── usePdf.ts           # PDF invoke wrappers & navigation logic
-│   ├── store.ts                # Zustand global state
-│   ├── App.tsx                 # Root layout with resizable panels
-│   └── main.tsx                # React entry point
-├── src-tauri/                  # Backend (Rust + Tauri)
-│   ├── src/
-│   │   ├── commands/
-│   │   │   ├── ai.rs           # AI Tauri commands (load, generate, cloud, etc.)
-│   │   │   └── pdf.rs          # PDF Tauri commands (open, render, text, etc.)
-│   │   ├── ai/
-│   │   │   ├── session.rs      # ONNX Runtime session management
-│   │   │   ├── tokenizer.rs    # HuggingFace tokenizer wrapper
-│   │   │   └── inference.rs    # Inference logic
-│   │   ├── models/
-│   │   │   ├── registry.rs     # Model discovery in ~/.aipdf/models/
-│   │   │   └── downloader.rs   # HuggingFace model downloader with progress
-│   │   ├── pdf/
-│   │   │   ├── document.rs     # PdfFile wrapper around pdfium-render
-│   │   │   ├── renderer.rs     # Page-to-image rendering
-│   │   │   └── text.rs         # Text extraction with character positions
-│   │   ├── state.rs            # AppState (PDF + AI mutex-protected state)
-│   │   ├── lib.rs              # Tauri plugin & command registration
-│   │   └── main.rs             # Desktop entry point
-│   ├── resources/pdfium/       # Bundled Pdfium shared libraries
-│   └── Cargo.toml              # Rust dependencies
-├── scripts/
-│   └── fetch-pdfium.sh         # Download Pdfium binaries for all platforms
-└── package.json                # Frontend dependencies & scripts
-```
+4. **Launch development environment:**
+   ```sh
+   npm run tauri dev
+   ```
 
-## Bundled Pdfium
+---
 
-The app bundles Pdfium so PDF rendering does not depend on a system install:
+## 📦 Project Architecture
 
-| Platform | Path | Architecture |
-|----------|------|-------------|
-| macOS | `src-tauri/resources/pdfium/libpdfium.dylib` | universal (x86_64 + arm64) |
-| Windows | `src-tauri/resources/pdfium/pdfium.dll` | x86_64 |
-| Linux | `src-tauri/resources/pdfium/libpdfium.so` | x86_64 |
+AiPDF is designed for modularity and performance:
 
-Refresh the bundled binaries with:
+- **`src/` (Frontend):** Modern React application with a focus on resizable layouts and interactive AI components.
+- **`src-tauri/src/` (Backend):**
+    - `commands/`: Tauri commands for AI, PDF, and Workspace management.
+    - `ai/`: Local inference engine, session management, and tokenizer wrappers.
+    - `pdf/`: Native PDF processing and text extraction logic.
+    - `rag_pipeline.rs`: The core logic for indexing and searching document context using LanceDB.
+    - `db.rs`: SQLite integration for persistent metadata and chat history.
 
-```sh
-bash scripts/fetch-pdfium.sh
-```
+---
 
-To verify a target is self-contained, build that platform and confirm the generated bundle contains `pdfium/<platform library name>` in the Tauri resource directory. The Rust loader prefers the bundled resource path and only falls back to a system Pdfium install if the bundled library is missing.
+## 📄 License
 
-## AI Models
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-### Local Models
+---
 
-Local models are stored in `~/.aipdf/models/<model-id>/` and require:
+## 🙏 Acknowledgements
 
-- `model.onnx` — The ONNX model file
-- `tokenizer.json` — HuggingFace tokenizer
-- `config.json` — Model metadata (optional)
-
-Download models from HuggingFace via the Model Manager UI or place them manually.
-
-### Cloud Models
-
-Cloud models connect to any OpenAI-compatible chat completions API. Configure in the Model Manager with:
-
-- **Base URL** — e.g., `https://api.openai.com`
-- **API Key** — Your provider's API key
-- **Model** — Model identifier (e.g., `gpt-4.1-mini`)
-
-Cloud model configs are persisted in browser localStorage.
-
-## Scripts
-
-| Command | Description |
-|---------|-------------|
-| `npm run dev` | Start Vite dev server (frontend only) |
-| `npm run build` | Type-check and build frontend |
-| `npm run tauri dev` | Run app in development mode |
-| `npm run tauri build` | Build production bundle |
-| `bash scripts/fetch-pdfium.sh` | Download/update bundled Pdfium binaries |
-
-## Recommended IDE Setup
-
-- [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+- [Tauri](https://tauri.app/) for the amazing framework.
+- [Hugging Face](https://huggingface.co/) for the tokenizer and model ecosystem.
+- [Google Pdfium](https://opensource.google/projects/pdfium) for the industry-standard PDF engine.
+- [LanceDB](https://lancedb.com/) for making vector search fast and local.
