@@ -55,7 +55,7 @@ export const MarkdownRenderer = React.memo(({ content }: { content: string }) =>
 MarkdownRenderer.displayName = "MarkdownRenderer"
 
 // Context pill for context display (file, page, text)
-export function ContextPill({ ctx, onRemove }: { ctx: ChatContext, onRemove?: (id: string) => void }) {
+export const ContextPill = React.memo(({ ctx, onRemove }: { ctx: ChatContext, onRemove?: (id: string) => void }) => {
   const icon = ctx.type === "file" 
     ? <FileText className="w-3 h-3 text-blue-500" /> 
     : ctx.type === "page" 
@@ -76,7 +76,9 @@ export function ContextPill({ ctx, onRemove }: { ctx: ChatContext, onRemove?: (i
       )}
     </div>
   )
-}
+})
+
+ContextPill.displayName = "ContextPill"
 
 // Thinking state indicator
 export function ThinkingIndicator({ isStreaming, isWaiting }: { isStreaming: boolean, isWaiting?: boolean }) {

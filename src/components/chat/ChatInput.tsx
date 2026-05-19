@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback, useMemo, useEffect } from "react"
-import { Plus } from "lucide-react"
+import Plus from "lucide-react/dist/esm/icons/plus"
 import { cn } from "../../lib/utils"
 import { useStore } from "../../store"
 import { ContextPill } from "./MessageItem"
@@ -13,12 +13,34 @@ interface ChatInputProps {
   onAddFullDocument: () => void
 }
 
+interface ContextsDisplayProps {
+  contexts: any[]
+  onRemove: (id: string) => void
+}
+
+const ContextsDisplay = React.memo(({ contexts, onRemove }: ContextsDisplayProps) => {
+  if (contexts.length === 0) return null
+  
+  return (
+    <div className="flex flex-wrap gap-1.5 px-3 pt-3">
+      {contexts.map((ctx) => (
+        <ContextPill key={ctx.id} ctx={ctx} onRemove={onRemove} />
+      ))}
+    </div>
+  )
+})
+
+ContextsDisplay.displayName = "ContextsDisplay"
+
 export const ChatInput = React.memo(({
   onSend,
   onAddCurrentPage,
   onAddFullDocument
 }: ChatInputProps) => {
   const [input, setInput] = useState("")
+  const inputRef = useRef(input)
+  inputRef.current = input
+  
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   
   const loadedModel = useStore(state => state.loadedModel)
@@ -41,7 +63,7 @@ export const ChatInput = React.memo(({
   })
 
   const handleSend = useCallback(() => {
-    const trimmedInput = input.trim()
+    const trimmedInput = inputRef.current.trim()
     if (!trimmedInput || !loadedModel) return
     onSend(trimmedInput)
     setInput("")
@@ -49,7 +71,7 @@ export const ChatInput = React.memo(({
     if (textareaRef.current) {
       textareaRef.current.style.height = "100px"
     }
-  }, [input, loadedModel, onSend])
+  }, [loadedModel, onSend])
 
   useEffect(() => {
     if (textareaRef.current) {
@@ -77,22 +99,16 @@ export const ChatInput = React.memo(({
   return (
     <div className="shrink-0 w-full p-4 pt-0">
       <div className="relative w-full">
-        {showContextMenu && (
+        {showContextMenu ? (
           <ChatContextMenu 
             ref={contextMenuRef}
             selectedIndex={menuSelectedIndex}
             onSelect={handleSelectMenuItem}
           />
-        )}
+        ) : null}
 
         <div className="relative flex flex-col rounded-xl border border-gray-200 bg-white shadow-[0_2px_12px_rgba(0,0,0,0.03)] focus-within:border-blue-400/60 focus-within:ring-4 focus-within:ring-blue-500/5 transition-all overflow-hidden">
-          {chatContexts.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 px-3 pt-3">
-              {chatContexts.map((ctx) => (
-                <ContextPill key={ctx.id} ctx={ctx} onRemove={removeChatContext} />
-              ))}
-            </div>
-          )}
+          <ContextsDisplay contexts={chatContexts} onRemove={removeChatContext} />
 
           <textarea
             ref={textareaRef}
@@ -105,7 +121,7 @@ export const ChatInput = React.memo(({
           />
 
           <ChatInputToolbar 
-            input={input}
+            isEmpty={!input.trim()}
             onSend={handleSend}
             showContextMenu={showContextMenu}
             setShowContextMenu={setShowContextMenu}

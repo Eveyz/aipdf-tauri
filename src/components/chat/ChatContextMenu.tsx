@@ -1,5 +1,6 @@
 import React, { useMemo } from "react"
-import { File, FileText } from "lucide-react"
+import File from "lucide-react/dist/esm/icons/file"
+import FileText from "lucide-react/dist/esm/icons/file-text"
 import { cn } from "../../lib/utils"
 import { useStore } from "../../store"
 
@@ -8,7 +9,7 @@ interface ChatContextMenuProps {
   onSelect: (index: number) => void
 }
 
-export const ChatContextMenu = React.forwardRef<HTMLDivElement, ChatContextMenuProps>(({
+export const ChatContextMenu = React.memo(React.forwardRef<HTMLDivElement, ChatContextMenuProps>(({
   selectedIndex,
   onSelect
 }, ref) => {
@@ -59,6 +60,6 @@ export const ChatContextMenu = React.forwardRef<HTMLDivElement, ChatContextMenuP
       </div>
     </div>
   )
-})
+}))
 
 ChatContextMenu.displayName = "ChatContextMenu"

@@ -1,5 +1,9 @@
 import React, { useCallback } from "react"
-import { Send, Square, Plus, MessageSquare, Sparkles } from "lucide-react"
+import Send from "lucide-react/dist/esm/icons/send"
+import Square from "lucide-react/dist/esm/icons/square"
+import Plus from "lucide-react/dist/esm/icons/plus"
+import MessageSquare from "lucide-react/dist/esm/icons/message-square"
+import Sparkles from "lucide-react/dist/esm/icons/sparkles"
 import { cn } from "../../lib/utils"
 import { useStore } from "../../store"
 import {
@@ -11,14 +15,14 @@ import {
 } from "../ui/select"
 
 interface ChatInputToolbarProps {
-  input: string
+  isEmpty: boolean
   onSend: () => void
   showContextMenu: boolean
   setShowContextMenu: (show: boolean) => void
 }
 
 export const ChatInputToolbar = React.memo(({
-  input,
+  isEmpty,
   onSend,
   showContextMenu,
   setShowContextMenu
@@ -132,13 +136,12 @@ export const ChatInputToolbar = React.memo(({
           <button
             className={cn(
               "h-7 w-7 flex items-center justify-center rounded-md transition-all shrink-0",
-              !loadedModel || !input.trim()
+              !loadedModel || isEmpty
                 ? "text-gray-300 cursor-not-allowed"
                 : "text-blue-600 hover:bg-blue-50 active:scale-[0.98]"
             )}
             onClick={onSend}
-
-            disabled={!loadedModel || !input.trim()}
+            disabled={!loadedModel || isEmpty}
             title="Send"
           >
             <Send className="h-3.5 w-3.5" />
