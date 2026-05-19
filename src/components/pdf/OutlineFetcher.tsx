@@ -1,11 +1,11 @@
-import { useEffect } from "react"
+import React, { useEffect } from "react"
 import { useStore, type OutlineItem } from "../../store"
 
 interface OutlineFetcherProps {
   pdfDocument: any
 }
 
-export function OutlineFetcher({ pdfDocument }: OutlineFetcherProps) {
+export const OutlineFetcher = React.memo(({ pdfDocument }: OutlineFetcherProps) => {
   const setPdfOutline = useStore((state) => state.setPdfOutline)
 
   useEffect(() => {
@@ -73,4 +73,6 @@ export function OutlineFetcher({ pdfDocument }: OutlineFetcherProps) {
   }, [pdfDocument, setPdfOutline])
 
   return null
-}
+})
+
+OutlineFetcher.displayName = "OutlineFetcher"

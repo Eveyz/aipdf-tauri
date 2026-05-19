@@ -1,3 +1,4 @@
+import React from "react"
 import { cn } from "../../lib/utils"
 import { usePdf } from "../../hooks/usePdf"
 import { useStore, type Document } from "../../store"
@@ -7,7 +8,7 @@ interface DocumentTabsProps {
   activePdfName?: string
 }
 
-export function DocumentTabs({ documents, activePdfName }: DocumentTabsProps) {
+export const DocumentTabs = React.memo(({ documents, activePdfName }: DocumentTabsProps) => {
   const { openPdf } = usePdf()
 
   return (
@@ -31,4 +32,6 @@ export function DocumentTabs({ documents, activePdfName }: DocumentTabsProps) {
       })}
     </div>
   )
-}
+})
+
+DocumentTabs.displayName = "DocumentTabs"

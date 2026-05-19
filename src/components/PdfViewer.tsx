@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useMemo } from "react"
+import React, { useEffect, useState, useRef, useMemo, useCallback } from "react"
 import { Loader2, AlertCircle } from "lucide-react"
 import { usePdf } from "../hooks/usePdf"
 import { useStore, type Highlight } from "../store"
@@ -30,6 +30,65 @@ const getNextId = () => crypto.randomUUID()
 const resetHash = () => {
   window.location.hash = ""
 }
+
+const BEFORE_LOAD = (
+  <div className="h-full w-full flex items-center justify-center text-muted-foreground gap-2">
+    <Loader2 className="h-5 w-5 animate-spin" />
+    Loading PDF content...
+  </div>
+)
+
+const ERROR_MESSAGE = (
+  <div className="h-full w-full flex items-center justify-center text-red-500 gap-2">
+    <AlertCircle className="h-5 w-5" />
+    Failed to load PDF. Check file permissions.
+  </div>
+)
+
+interface ViewerContentProps {
+  pdfDocument: any
+  zoom: number
+  handleHighlighterRef: (ref: any) => void
+  handleScroll: () => void
+  renderTooltip: any
+  highlightTransform: any
+  filteredHighlights: any[]
+}
+
+const ViewerContent = React.memo(({
+  pdfDocument,
+  zoom,
+  handleHighlighterRef,
+  handleScroll,
+  renderTooltip,
+  highlightTransform,
+  filteredHighlights
+}: ViewerContentProps) => {
+  const zoomString = useMemo(() => zoom.toString(), [zoom])
+  const enableAreaSelection = useCallback((event: any) => event.altKey, [])
+  const scrollRef = useCallback(() => {}, [])
+
+  return (
+    <div className="h-full w-full relative">
+      <AddPageContextButton />
+      <PdfHighlighter
+        ref={handleHighlighterRef}
+        pdfDocument={pdfDocument}
+        pdfScaleValue={zoomString}
+        enableAreaSelection={enableAreaSelection}
+        onScrollChange={handleScroll}
+        scrollRef={scrollRef}
+        onSelectionFinished={renderTooltip}
+        highlightTransform={highlightTransform}
+        highlights={filteredHighlights}
+      />
+      <OutlineFetcher pdfDocument={pdfDocument} />
+      <PageIndexer pdfDocument={pdfDocument} />
+    </div>
+  )
+})
+
+ViewerContent.displayName = "ViewerContent"
 
 export function PdfViewer() {
   const pdfInfo = useStore((state) => state.pdfInfo)
@@ -93,25 +152,26 @@ export function PdfViewer() {
     }
   }, [currentPage])
 
-  const handleScroll = () => {
+  const handleScroll = useCallback(() => {
     resetHash()
     if (highlighterRef.current?.viewer) {
       const pageNum = highlighterRef.current.viewer.currentPageNumber
-      if (pageNum && pageNum - 1 !== currentPage) {
-        setCurrentPage(pageNum - 1)
+      if (pageNum && pageNum - 1 !== useStore.getState().currentPage) {
+        useStore.getState().setCurrentPage(pageNum - 1)
       }
     }
-  }
+  }, [])
 
-  const addHighlightToStore = (highlight: NewHighlight) => {
-    if (!lastPdfPath) return
+  const addHighlightToStore = useCallback((highlight: NewHighlight) => {
+    const currentPath = useStore.getState().lastPdfPath
+    if (!currentPath) return
     const id = getNextId()
-    const newHighlight = { ...highlight, id, documentPath: lastPdfPath } as Highlight
-    addHighlight(newHighlight)
-  }
+    const newHighlight = { ...highlight, id, documentPath: currentPath } as Highlight
+    useStore.getState().addHighlight(newHighlight)
+  }, [])
 
   // Handle PDF Highlighter ref and events
-  const handleHighlighterRef = (ref: any) => {
+  const handleHighlighterRef = useCallback((ref: any) => {
     highlighterRef.current = ref
     if (ref?.viewer?.eventBus) {
       const eventBus = ref.viewer.eventBus as any
@@ -139,7 +199,51 @@ export function PdfViewer() {
         })
       }
     }
-  }
+  }, [])
+
+  const renderTooltip = useCallback((
+    position: any,
+    content: any,
+    hideTipAndSelection: any,
+    transformSelection: any
+  ) => (
+    <TooltipForm
+      content={content}
+      position={position}
+      hideTipAndSelection={hideTipAndSelection}
+      transformSelection={transformSelection}
+      addHighlightToStore={addHighlightToStore}
+      addChatContext={addChatContext}
+    />
+  ), [addHighlightToStore, addChatContext])
+
+  const highlightTransform = useCallback((
+    highlight: any,
+    _index: number,
+    _setTip: any,
+    _hideTip: any,
+    _viewportToScaled: any,
+    _screenshot: any,
+    isScrolledTo: boolean
+  ) => {
+    const isTextHighlight = !Boolean(
+      highlight.content && highlight.content.image
+    )
+
+    return isTextHighlight ? (
+      <PdfHighlight
+        isScrolledTo={isScrolledTo}
+        position={highlight.position}
+        comment={highlight.comment}
+      />
+    ) : (
+      <AreaHighlight
+        isScrolledTo={isScrolledTo}
+        highlight={highlight}
+        onChange={() => {}}
+      />
+    )
+  }, [])
 
   // Empty states
   if (documents.length === 0 && !pdfInfo) {
@@ -166,76 +270,19 @@ export function PdfViewer() {
           <div className="absolute inset-0">
             <PdfLoader 
               url={documentUrl} 
-              beforeLoad={
-                <div className="h-full w-full flex items-center justify-center text-muted-foreground gap-2">
-                  <Loader2 className="h-5 w-5 animate-spin" />
-                  Loading PDF content...
-                </div>
-              }
-              errorMessage={
-                <div className="h-full w-full flex items-center justify-center text-red-500 gap-2">
-                  <AlertCircle className="h-5 w-5" />
-                  Failed to load PDF. Check file permissions.
-                </div>
-              }
+              beforeLoad={BEFORE_LOAD}
+              errorMessage={ERROR_MESSAGE}
             >
               {(pdfDocument) => (
-                <div className="h-full w-full relative">
-                  <AddPageContextButton />
-                  <PdfHighlighter
-                    ref={handleHighlighterRef}
-                    pdfDocument={pdfDocument}
-                    pdfScaleValue={zoom.toString()}
-                    enableAreaSelection={(event) => event.altKey}
-                    onScrollChange={handleScroll}
-                    scrollRef={() => {}}
-                    onSelectionFinished={(
-                      position,
-                      content,
-                      hideTipAndSelection,
-                      transformSelection
-                    ) => (
-                      <TooltipForm
-                        content={content}
-                        position={position}
-                        hideTipAndSelection={hideTipAndSelection}
-                        transformSelection={transformSelection}
-                        addHighlightToStore={addHighlightToStore}
-                        addChatContext={addChatContext}
-                      />
-                    )}
-                    highlightTransform={(
-                      highlight,
-                      _index,
-                      _setTip,
-                      _hideTip,
-                      _viewportToScaled,
-                      _screenshot,
-                      isScrolledTo
-                    ) => {
-                      const isTextHighlight = !Boolean(
-                        highlight.content && highlight.content.image
-                      )
-
-                      return isTextHighlight ? (
-                        <PdfHighlight
-                          isScrolledTo={isScrolledTo}
-                          position={highlight.position}
-                          comment={highlight.comment}
-                        />
-                      ) : (
-                        <AreaHighlight
-                          isScrolledTo={isScrolledTo}
-                          highlight={highlight}
-                          onChange={() => {}}
-                        />
-                      )
-                    }}
-                    highlights={filteredHighlights}
-                  />
-                  <OutlineFetcher pdfDocument={pdfDocument} />
-                  <PageIndexer pdfDocument={pdfDocument} />
-                </div>
+                <ViewerContent 
+                  pdfDocument={pdfDocument}
+                  zoom={zoom}
+                  handleHighlighterRef={handleHighlighterRef}
+                  handleScroll={handleScroll}
+                  renderTooltip={renderTooltip}
+                  highlightTransform={highlightTransform}
+                  filteredHighlights={filteredHighlights}
+                />
               )}
             </PdfLoader>
           </div>

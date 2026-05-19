@@ -1,9 +1,9 @@
-import { useState } from "react"
+import React, { useState } from "react"
 import { Loader2, FilePlus } from "lucide-react"
 import { usePdf } from "../../hooks/usePdf"
 import { useStore } from "../../store"
 
-export function AddPageContextButton() {
+export const AddPageContextButton = React.memo(() => {
   const currentPage = useStore((state) => state.currentPage)
   const pdfInfo = useStore((state) => state.pdfInfo)
   const addChatContext = useStore((state) => state.addChatContext)
@@ -46,4 +46,6 @@ export function AddPageContextButton() {
       <span>Add Page to Chat</span>
     </button>
   )
-}
+})
+
+AddPageContextButton.displayName = "AddPageContextButton"
