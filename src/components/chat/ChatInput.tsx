@@ -243,7 +243,7 @@ export const ChatInput = React.memo(({
               <div className="h-4 w-px bg-gray-200 mx-1 shrink-0" />
 
               <Select value={loadedModel?.id} onValueChange={handleModelSelect}>
-                <SelectTrigger className="h-7 min-w-0 max-w-[150px] border-0 px-2 py-0 text-[11px] font-medium shadow-none bg-transparent hover:bg-white hover:shadow-sm rounded-md transition-all gap-1.5 focus:ring-0">
+                <SelectTrigger className="h-7 min-w-0 max-w-[150px] border-0 px-2 py-0 text-[11px] font-medium shadow-none bg-transparent hover:bg-gray-100 rounded-md transition-all gap-1.5 focus:ring-0">
                   <SelectValue placeholder="Select model" />
                 </SelectTrigger>
                 <SelectContent className="max-w-[240px]">
