@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from "react"
-import { Send, Square, Plus, FileText, File } from "lucide-react"
+import { Send, Square, Plus, FileText, File, MessageSquare, Sparkles } from "lucide-react"
 import { cn } from "../../lib/utils"
 import { useStore } from "../../store"
 import {
@@ -32,6 +32,8 @@ export const ChatInput = React.memo(({
   const loadedModel = useStore(state => state.loadedModel)
   const cloudModels = useStore(state => state.cloudModels)
   const setLoadedModel = useStore(state => state.setLoadedModel)
+  const chatMode = useStore(state => state.chatMode)
+  const setChatMode = useStore(state => state.setChatMode)
   const chatContexts = useStore(state => state.chatContexts)
   const removeChatContext = useStore(state => state.removeChatContext)
   const stopGeneration = useStore(state => state.stopGeneration)
@@ -204,24 +206,53 @@ export const ChatInput = React.memo(({
               <button
                 onClick={() => setShowContextMenu(!showContextMenu)}
                 className={cn(
-                  "h-7 w-7 flex items-center justify-center rounded-md border border-gray-200 bg-white shadow-sm hover:border-blue-400/50 hover:text-blue-600 transition-all shrink-0",
-                  showContextMenu && "border-blue-400/50 text-blue-600 ring-2 ring-blue-500/5"
+                  "h-7 w-7 flex items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-all shrink-0",
+                  showContextMenu && "bg-gray-100 text-gray-600"
                 )}
                 title="Add context"
               >
                 <Plus className={cn("w-3.5 h-3.5 transition-transform duration-200", showContextMenu && "rotate-45")} />
               </button>
 
+              <Select value={chatMode} onValueChange={(v: any) => setChatMode(v)}>
+                <SelectTrigger className="h-7 w-7 border-0 p-0 text-[11px] font-medium shadow-none bg-transparent hover:bg-gray-100 rounded-md transition-all focus:ring-0 flex items-center justify-center shrink-0 [&>svg]:hidden">
+                  <SelectValue>
+                    {chatMode === "ask" ? (
+                      <MessageSquare className="w-3.5 h-3.5 text-gray-500" />
+                    ) : (
+                      <Sparkles className="w-3.5 h-3.5 text-blue-500" />
+                    )}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent align="start" className="min-w-[100px]">
+                  <SelectItem value="ask" className="text-xs py-1.5">
+                    <div className="flex items-center gap-2">
+                      <MessageSquare className="w-3.5 h-3.5 text-gray-400" />
+                      <span>Ask</span>
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="agent" className="text-xs py-1.5">
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="w-3.5 h-3.5 text-blue-400" />
+                      <span>Agent</span>
+                    </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+
               <div className="h-4 w-px bg-gray-200 mx-1 shrink-0" />
 
               <Select value={loadedModel?.id} onValueChange={handleModelSelect}>
-                <SelectTrigger className="h-7 min-w-0 border-0 px-2 py-0 text-[11px] font-semibold shadow-none bg-transparent hover:bg-white hover:shadow-sm rounded-md transition-all">
+                <SelectTrigger className="h-7 min-w-0 max-w-[150px] border-0 px-2 py-0 text-[11px] font-medium shadow-none bg-transparent hover:bg-white hover:shadow-sm rounded-md transition-all gap-1.5 focus:ring-0">
                   <SelectValue placeholder="Select model" />
                 </SelectTrigger>
                 <SelectContent className="max-w-[240px]">
                   {loadedModel?.source === "local" && (
                     <SelectItem value={loadedModel.id} className="text-xs">
-                      {loadedModel.name}
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-green-500" />
+                        <span className="truncate">{loadedModel.name}</span>
+                      </div>
                     </SelectItem>
                   )}
                   {cloudModels.map((model) => (
@@ -230,7 +261,10 @@ export const ChatInput = React.memo(({
                       value={`cloud:${model.id}`}
                       className="text-xs"
                     >
-                      {model.name}
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-blue-500" />
+                        <span className="truncate">{model.name}</span>
+                      </div>
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -249,17 +283,16 @@ export const ChatInput = React.memo(({
               ) : (
                 <button
                   className={cn(
-                    "h-7 px-3.5 flex items-center justify-center gap-1.5 rounded-md text-xs font-bold transition-all shadow-sm shrink-0",
+                    "h-7 w-7 flex items-center justify-center rounded-md transition-all shrink-0",
                     !loadedModel || !input.trim()
-                      ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-                      : "bg-blue-600 text-white hover:bg-blue-700 active:scale-[0.98]"
+                      ? "text-gray-300 cursor-not-allowed"
+                      : "text-blue-600 hover:bg-blue-50 active:scale-[0.98]"
                   )}
                   onClick={handleSend}
                   disabled={!loadedModel || !input.trim()}
                   title="Send"
                 >
-                  <Send className="h-3 w-3" />
-                  <span>Send</span>
+                  <Send className="h-3.5 w-3.5" />
                 </button>
               )}
             </div>

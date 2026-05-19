@@ -93,6 +93,7 @@ pub fn run() {
             commands::ai::list_cloud_models,
             commands::ai::delete_cloud_model_entry,
             commands::ai::set_last_used_model,
+            commands::ai::start_agent_task,
             commands::ai::create_session,
             commands::ai::list_sessions,
             commands::ai::delete_session,

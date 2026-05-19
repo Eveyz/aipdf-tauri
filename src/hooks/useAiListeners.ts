@@ -40,9 +40,25 @@ export function useAiListeners() {
         useStore.getState().setDownloadProgress(event.payload as any)
       })
 
+      const unlistenAgentProgress = await listen<any>("agent-progress", (event) => {
+        const state = useStore.getState()
+        state.setAgentProgress([...state.agentProgress, event.payload])
+        if (event.payload.is_final) {
+          state.setIsGenerating(false)
+        }
+      })
+
+      const unlistenAgentError = await listen<string>("agent-error", (event) => {
+        const state = useStore.getState()
+        state.setIsGenerating(false)
+        state.addChatMessage({ id: crypto.randomUUID(), role: "assistant", content: `**Agent Error:** ${event.payload}` })
+      })
+
       return () => {
         unlistenToken()
         unlistenProgress()
+        unlistenAgentProgress()
+        unlistenAgentError()
         listenersStarted = false
       }
     }

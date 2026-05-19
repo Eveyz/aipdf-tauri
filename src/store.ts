@@ -155,24 +155,29 @@ interface AppState {
   chatMessages: ChatMessage[]
   streamingToken: string
   chatContexts: ChatContext[]
+  chatMode: "ask" | "agent"
 
   // UI
   sidebarOpen: boolean
   chatOpen: boolean
   modelManagerOpen: boolean
   downloadProgress: DownloadProgress | null
+  agentProgress: any[] // From useAgent.ts
   cloudModels: CloudModelEntry[]
   lastPdfPath: string | null
   lastPdfHash: string | null
 
   // Sessions
   sessions: ChatSession[]
-  activeSessionId: string | null
+  activeSessionId: null | string
   showSessions: boolean
 
   // Actions
   init: () => Promise<void>
+  setChatMode: (mode: "ask" | "agent") => void
+  setAgentProgress: (progress: any[]) => void
   setActiveEmbeddingModel: (model: { id: string; name: string } | null) => void
+
   createWorkspace: (name: string, type?: "standard" | "quick_read") => Promise<string>
   switchWorkspace: (id: string) => Promise<void>
   deleteWorkspace: (id: string) => Promise<void>
@@ -253,12 +258,14 @@ export const useStore = create<AppState>((set, get) => ({
   chatMessages: [],
   streamingToken: "",
   chatContexts: [],
+  chatMode: "ask",
 
   // UI
   sidebarOpen: true,
   chatOpen: true,
   modelManagerOpen: false,
   downloadProgress: null,
+  agentProgress: [],
   cloudModels: [],
   lastPdfPath: null,
   lastPdfHash: null,
@@ -753,6 +760,8 @@ switchWorkspace: async (id) => {
   },
   setShowSessions: (show) => set({ showSessions: show }),
   setMindmapOpen: (open) => set({ mindmapOpen: open }),
+  setChatMode: (mode) => set({ chatMode: mode }),
+  setAgentProgress: (progress) => set({ agentProgress: progress }),
 
   stopGeneration: async () => {
     await invoke("stop_generation")
@@ -760,11 +769,36 @@ switchWorkspace: async (id) => {
   },
 
   generate: async (prompt, contexts, maxTokens, temperature) => {
-    const { loadedModel, activeSessionId, chatMessages: currentMessages } = get()
+    const { loadedModel, activeSessionId, chatMessages: currentMessages, chatMode, activeWorkspaceId } = get()
     if (!loadedModel) throw new Error("No model loaded")
     if (!activeSessionId) throw new Error("No active session")
 
-    set({ isGenerating: true, streamingToken: "" })
+    set({ isGenerating: true, streamingToken: "", agentProgress: [] })
+
+    if (chatMode === "agent") {
+      if (!activeWorkspaceId) throw new Error("No active workspace for agent")
+      const modelConfig = {
+        vendor: loadedModel.source === "cloud" ? loadedModel.modelType?.split(" - ")[0] : "local",
+        baseUrl: loadedModel.baseUrl || "",
+        apiKey: loadedModel.apiKey || "",
+        modelName: loadedModel.modelName || loadedModel.name,
+      }
+      
+      // We manually add the user message to history first since start_agent_task doesn't persist it like generate/generate_cloud
+      const contexts_json = contexts ? JSON.stringify(contexts) : null;
+      await invoke("set_setting", { key: "temp_contexts", value: contexts_json || "" }); // Hidden hack or we update add_message
+      await invoke("add_message", { sessionId: activeSessionId, role: "user", content: prompt, contexts: contexts_json });
+      
+      const newMsg: ChatMessage = { id: Date.now().toString(), role: "user", content: prompt, contexts }
+      get().addChatMessage(newMsg)
+
+      await invoke("start_agent_task", {
+        workspaceId: activeWorkspaceId,
+        prompt,
+        modelConfig
+      })
+      return
+    }
 
     if (loadedModel.source === "cloud") {
       const messages = [
